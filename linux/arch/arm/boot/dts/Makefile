@@ -739,6 +739,7 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += \
 	mt8135-evbp1.dtb
 dtb-$(CONFIG_ARCH_ZX) += zx296702-ad1.dtb
 dtb-$(CONFIG_MACH_OPP_PALMETTO_BMC) += aspeed-bmc-opp-palmetto.dtb
+dtb-$(CONFIG_MACH_MELLANOX_BMC) += aspeed-bmc-mellanox.dtb
 endif
 
 always		:= $(dtb-y)

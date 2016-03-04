@@ -1931,8 +1931,11 @@ EXPORT_SYMBOL_GPL(pmbus_do_probe);
 int pmbus_do_remove(struct i2c_client *client)
 {
 	struct pmbus_data *data = i2c_get_clientdata(client);
+        const struct pmbus_platform_data *pdata = dev_get_platdata(&client->dev);
 	hwmon_device_unregister(data->hwmon_dev);
 	kfree(data->group.attrs);
+        if (pdata)
+                kfree(pdata);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(pmbus_do_remove);
