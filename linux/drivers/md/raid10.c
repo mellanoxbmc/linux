@@ -1698,6 +1698,9 @@ static int raid10_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 	if (rdev->saved_raid_disk < 0 && !_enough(conf, 1, -1))
 		return -EINVAL;
 
+	if (md_integrity_add_rdev(rdev, mddev))
+		return -ENXIO;
+
 	if (rdev->raid_disk >= 0)
 		first = last = rdev->raid_disk;
 
@@ -1739,7 +1742,6 @@ static int raid10_add_disk(struct mddev *mddev, struct md_rdev *rdev)
 		rcu_assign_pointer(p->rdev, rdev);
 		break;
 	}
-	md_integrity_add_rdev(rdev, mddev);
 	if (mddev->queue && blk_queue_discard(bdev_get_queue(rdev->bdev)))
 		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, mddev->queue);
 
@@ -3149,7 +3151,7 @@ static sector_t sync_request(struct mddev *mddev, sector_t sector_nr,
 		/* resync. Schedule a read for every block at this virt offset */
 		int count = 0;
 
-		bitmap_cond_end_sync(mddev->bitmap, sector_nr);
+		bitmap_cond_end_sync(mddev->bitmap, sector_nr, 0);
 
 		if (!bitmap_start_sync(mddev->bitmap, sector_nr,
 				       &sync_blocks, mddev->degraded) &&

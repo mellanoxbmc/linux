@@ -471,7 +471,7 @@ static bool ast_i2c_do_byte_xfer(struct ast_i2c_bus *bus)
 
 		if (bus->msg->flags & I2C_M_RD) {
 			cmd = AST_I2CD_M_RX_CMD;
-			if (bus->send_stop && is_last)
+			if (bus->send_stop && is_last && !bus->query_len)
 				cmd |= AST_I2CD_M_S_RX_CMD_LAST |
 					AST_I2CD_M_STOP_CMD;
 

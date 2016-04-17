@@ -22,7 +22,7 @@
 #include <linux/kvm.h>
 #include <asm/debug.h>
 #include <asm/cpu.h>
-#include <asm/fpu-internal.h>
+#include <asm/fpu/api.h>
 #include <asm/isc.h>
 
 #define KVM_MAX_VCPUS 64
@@ -506,7 +506,6 @@ struct kvm_vcpu_arch {
 	struct kvm_s390_sie_block *sie_block;
 	unsigned int      host_acrs[NUM_ACRS];
 	struct fpu	  host_fpregs;
-	struct fpu	  guest_fpregs;
 	struct kvm_s390_local_interrupt local_int;
 	struct hrtimer    ckc_timer;
 	struct kvm_s390_pgm_info pgm;
@@ -644,5 +643,7 @@ static inline void kvm_arch_memslots_updated(struct kvm *kvm, struct kvm_memslot
 static inline void kvm_arch_flush_shadow_all(struct kvm *kvm) {}
 static inline void kvm_arch_flush_shadow_memslot(struct kvm *kvm,
 		struct kvm_memory_slot *slot) {}
+static inline void kvm_arch_vcpu_blocking(struct kvm_vcpu *vcpu) {}
+static inline void kvm_arch_vcpu_unblocking(struct kvm_vcpu *vcpu) {}
 
 #endif

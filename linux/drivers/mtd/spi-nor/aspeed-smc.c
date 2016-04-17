@@ -168,7 +168,6 @@ struct aspeed_smc_chip {
 	struct aspeed_smc_controller *controller;
 	__le32 __iomem *ctl;			/* control register */
 	void __iomem *base;			/* base of chip window */
-	struct mtd_info mtd;
 	__le32 ctl_val[smc_num_ctl_reg_values];	/* controls with timing */
 	enum smc_flash_type type;		/* what type of flash */
 	struct spi_nor nor;
@@ -267,7 +266,7 @@ static int aspeed_smc_read_reg(struct spi_nor *nor, u8 opcode, u8 *buf, int len)
 }
 
 static int aspeed_smc_write_reg(struct spi_nor *nor, u8 opcode, u8 *buf,
-				int len, int write_enable)
+				int len)
 {
 	struct aspeed_smc_chip *chip = nor->priv;
 
@@ -350,7 +349,7 @@ static int aspeed_smc_remove(struct platform_device *dev)
 	for (n = 0; n < controller->info->nce; n++) {
 		chip = controller->chips[n];
 		if (chip)
-			mtd_device_unregister(&chip->mtd);
+			mtd_device_unregister(&chip->nor.mtd);
 	}
 
 	return 0;
@@ -505,9 +504,8 @@ static int aspeed_smc_probe(struct platform_device *dev)
 
 		chip->nor.dev = &cdev->dev;
 		chip->nor.priv = chip;
-		chip->nor.mtd = &chip->mtd;
-		chip->mtd.priv = &chip->nor; /* should be in spi_nor_scan()!! */
-		chip->mtd.name = of_get_property(child, "label", NULL);
+		chip->nor.flash_node = child;
+		chip->nor.mtd.name = of_get_property(child, "label", NULL);
 		chip->nor.erase = aspeed_smc_erase;
 		chip->nor.read = aspeed_smc_read_user;
 		chip->nor.write = aspeed_smc_write_user;
@@ -532,7 +530,7 @@ static int aspeed_smc_probe(struct platform_device *dev)
 
 		memset(&ppdata, 0, sizeof(ppdata));
 		ppdata.of_node = cdev->dev.of_node;
-		err = mtd_device_parse_register(&chip->mtd, NULL, &ppdata, NULL, 0);
+		err = mtd_device_parse_register(&chip->nor.mtd, NULL, &ppdata, NULL, 0);
 		if (err)
 			continue;
 		controller->chips[n] = chip;

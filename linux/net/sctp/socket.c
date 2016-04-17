@@ -972,7 +972,7 @@ static int sctp_setsockopt_bindx(struct sock *sk,
 		return -EFAULT;
 
 	/* Alloc space for the address array in kernel memory.  */
-	kaddrs = kmalloc(addrs_size, GFP_KERNEL);
+	kaddrs = kmalloc(addrs_size, GFP_USER | __GFP_NOWARN);
 	if (unlikely(!kaddrs))
 		return -ENOMEM;
 
@@ -1301,8 +1301,9 @@ static int __sctp_setsockopt_connectx(struct sock *sk,
 				      int addrs_size,
 				      sctp_assoc_t *assoc_id)
 {
-	int err = 0;
 	struct sockaddr *kaddrs;
+	gfp_t gfp = GFP_KERNEL;
+	int err = 0;
 
 	pr_debug("%s: sk:%p addrs:%p addrs_size:%d\n",
 		 __func__, sk, addrs, addrs_size);
@@ -1315,7 +1316,9 @@ static int __sctp_setsockopt_connectx(struct sock *sk,
 		return -EFAULT;
 
 	/* Alloc space for the address array in kernel memory.  */
-	kaddrs = kmalloc(addrs_size, GFP_KERNEL);
+	if (sk->sk_socket->file)
+		gfp = GFP_USER | __GFP_NOWARN;
+	kaddrs = kmalloc(addrs_size, gfp);
 	if (unlikely(!kaddrs))
 		return -ENOMEM;
 
@@ -1951,8 +1954,6 @@ static int sctp_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 
 	/* Now send the (possibly) fragmented message. */
 	list_for_each_entry(chunk, &datamsg->chunks, frag_list) {
-		sctp_chunk_hold(chunk);
-
 		/* Do accounting for the write space.  */
 		sctp_set_owner_w(chunk);
 
@@ -1965,15 +1966,13 @@ static int sctp_sendmsg(struct sock *sk, struct msghdr *msg, size_t msg_len)
 	 * breaks.
 	 */
 	err = sctp_primitive_SEND(net, asoc, datamsg);
+	sctp_datamsg_put(datamsg);
 	/* Did the lower layer accept the chunk? */
-	if (err) {
-		sctp_datamsg_free(datamsg);
+	if (err)
 		goto out_free;
-	}
 
 	pr_debug("%s: we sent primitively\n", __func__);
 
-	sctp_datamsg_put(datamsg);
 	err = msg_len;
 
 	if (unlikely(wait_connect)) {
@@ -4474,7 +4473,7 @@ static int sctp_getsockopt_peeloff(struct sock *sk, int len, char __user *optval
 	}
 
 	newfile = sock_alloc_file(newsock, 0, NULL);
-	if (unlikely(IS_ERR(newfile))) {
+	if (IS_ERR(newfile)) {
 		put_unused_fd(retval);
 		sock_release(newsock);
 		return PTR_ERR(newfile);
@@ -4927,7 +4926,7 @@ static int sctp_getsockopt_local_addrs(struct sock *sk, int len,
 	to = optval + offsetof(struct sctp_getaddrs, addrs);
 	space_left = len - offsetof(struct sctp_getaddrs, addrs);
 
-	addrs = kmalloc(space_left, GFP_KERNEL);
+	addrs = kmalloc(space_left, GFP_USER | __GFP_NOWARN);
 	if (!addrs)
 		return -ENOMEM;
 
@@ -5543,6 +5542,7 @@ static int sctp_getsockopt_hmac_ident(struct sock *sk, int len,
 	struct sctp_hmac_algo_param *hmacs;
 	__u16 data_len = 0;
 	u32 num_idents;
+	int i;
 
 	if (!ep->auth_enable)
 		return -EACCES;
@@ -5560,8 +5560,12 @@ static int sctp_getsockopt_hmac_ident(struct sock *sk, int len,
 		return -EFAULT;
 	if (put_user(num_idents, &p->shmac_num_idents))
 		return -EFAULT;
-	if (copy_to_user(p->shmac_idents, hmacs->hmac_ids, data_len))
-		return -EFAULT;
+	for (i = 0; i < num_idents; i++) {
+		__u16 hmacid = ntohs(hmacs->hmac_ids[i]);
+
+		if (copy_to_user(&p->shmac_idents[i], &hmacid, sizeof(__u16)))
+			return -EFAULT;
+	}
 	return 0;
 }
 
@@ -5776,7 +5780,7 @@ static int sctp_getsockopt_assoc_ids(struct sock *sk, int len,
 
 	len = sizeof(struct sctp_assoc_ids) + sizeof(sctp_assoc_t) * num;
 
-	ids = kmalloc(len, GFP_KERNEL);
+	ids = kmalloc(len, GFP_USER | __GFP_NOWARN);
 	if (unlikely(!ids))
 		return -ENOMEM;
 
@@ -6457,7 +6461,7 @@ unsigned int sctp_poll(struct file *file, struct socket *sock, poll_table *wait)
 	if (sctp_writeable(sk)) {
 		mask |= POLLOUT | POLLWRNORM;
 	} else {
-		set_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
+		sk_set_bit(SOCKWQ_ASYNC_NOSPACE, sk);
 		/*
 		 * Since the socket is not locked, the buffer
 		 * might be made available after the writeable check and
@@ -6641,6 +6645,7 @@ static int sctp_msghdr_parse(const struct msghdr *msg, sctp_cmsgs_t *cmsgs)
 
 			if (cmsgs->srinfo->sinfo_flags &
 			    ~(SCTP_UNORDERED | SCTP_ADDR_OVER |
+			      SCTP_SACK_IMMEDIATELY |
 			      SCTP_ABORT | SCTP_EOF))
 				return -EINVAL;
 			break;
@@ -6664,6 +6669,7 @@ static int sctp_msghdr_parse(const struct msghdr *msg, sctp_cmsgs_t *cmsgs)
 
 			if (cmsgs->sinfo->snd_flags &
 			    ~(SCTP_UNORDERED | SCTP_ADDR_OVER |
+			      SCTP_SACK_IMMEDIATELY |
 			      SCTP_ABORT | SCTP_EOF))
 				return -EINVAL;
 			break;
@@ -6800,26 +6806,30 @@ no_packet:
 static void __sctp_write_space(struct sctp_association *asoc)
 {
 	struct sock *sk = asoc->base.sk;
-	struct socket *sock = sk->sk_socket;
 
-	if ((sctp_wspace(asoc) > 0) && sock) {
-		if (waitqueue_active(&asoc->wait))
-			wake_up_interruptible(&asoc->wait);
+	if (sctp_wspace(asoc) <= 0)
+		return;
 
-		if (sctp_writeable(sk)) {
-			wait_queue_head_t *wq = sk_sleep(sk);
+	if (waitqueue_active(&asoc->wait))
+		wake_up_interruptible(&asoc->wait);
 
-			if (wq && waitqueue_active(wq))
-				wake_up_interruptible(wq);
+	if (sctp_writeable(sk)) {
+		struct socket_wq *wq;
+
+		rcu_read_lock();
+		wq = rcu_dereference(sk->sk_wq);
+		if (wq) {
+			if (waitqueue_active(&wq->wait))
+				wake_up_interruptible(&wq->wait);
 
 			/* Note that we try to include the Async I/O support
 			 * here by modeling from the current TCP/UDP code.
 			 * We have not tested with it yet.
 			 */
 			if (!(sk->sk_shutdown & SEND_SHUTDOWN))
-				sock_wake_async(sock,
-						SOCK_WAKE_SPACE, POLL_OUT);
+				sock_wake_async(wq, SOCK_WAKE_SPACE, POLL_OUT);
 		}
+		rcu_read_unlock();
 	}
 }
 
@@ -7198,6 +7208,8 @@ void sctp_copy_sock(struct sock *newsk, struct sock *sk,
 
 	if (newsk->sk_flags & SK_FLAGS_TIMESTAMP)
 		net_enable_timestamp();
+
+	security_sk_clone(sk, newsk);
 }
 
 static inline void sctp_copy_descendant(struct sock *sk_to,

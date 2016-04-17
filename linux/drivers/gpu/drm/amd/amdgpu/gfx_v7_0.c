@@ -3628,6 +3628,19 @@ static void gfx_v7_0_ring_emit_vm_flush(struct amdgpu_ring *ring,
 					unsigned vm_id, uint64_t pd_addr)
 {
 	int usepfp = (ring->type == AMDGPU_RING_TYPE_GFX);
+	uint32_t seq = ring->fence_drv.sync_seq;
+	uint64_t addr = ring->fence_drv.gpu_addr;
+
+	amdgpu_ring_write(ring, PACKET3(PACKET3_WAIT_REG_MEM, 5));
+	amdgpu_ring_write(ring, (WAIT_REG_MEM_MEM_SPACE(1) | /* memory */
+				 WAIT_REG_MEM_FUNCTION(3) | /* equal */
+				 WAIT_REG_MEM_ENGINE(usepfp)));   /* pfp or me */
+	amdgpu_ring_write(ring, addr & 0xfffffffc);
+	amdgpu_ring_write(ring, upper_32_bits(addr) & 0xffffffff);
+	amdgpu_ring_write(ring, seq);
+	amdgpu_ring_write(ring, 0xffffffff);
+	amdgpu_ring_write(ring, 4); /* poll interval */
+
 	if (usepfp) {
 		/* synce CE with ME to prevent CE fetch CEIB before context switch done */
 		amdgpu_ring_write(ring, PACKET3(PACKET3_SWITCH_BUFFER, 0));
@@ -5542,24 +5555,6 @@ const struct amd_ip_funcs gfx_v7_0_ip_funcs = {
 	.set_powergating_state = gfx_v7_0_set_powergating_state,
 };
 
-/**
- * gfx_v7_0_ring_is_lockup - check if the 3D engine is locked up
- *
- * @adev: amdgpu_device pointer
- * @ring: amdgpu_ring structure holding ring information
- *
- * Check if the 3D engine is locked up (CIK).
- * Returns true if the engine is locked, false if not.
- */
-static bool gfx_v7_0_ring_is_lockup(struct amdgpu_ring *ring)
-{
-	if (gfx_v7_0_is_idle(ring->adev)) {
-		amdgpu_ring_lockup_update(ring);
-		return false;
-	}
-	return amdgpu_ring_test_lockup(ring);
-}
-
 static const struct amdgpu_ring_funcs gfx_v7_0_ring_funcs_gfx = {
 	.get_rptr = gfx_v7_0_ring_get_rptr_gfx,
 	.get_wptr = gfx_v7_0_ring_get_wptr_gfx,
@@ -5573,7 +5568,6 @@ static const struct amdgpu_ring_funcs gfx_v7_0_ring_funcs_gfx = {
 	.emit_hdp_flush = gfx_v7_0_ring_emit_hdp_flush,
 	.test_ring = gfx_v7_0_ring_test_ring,
 	.test_ib = gfx_v7_0_ring_test_ib,
-	.is_lockup = gfx_v7_0_ring_is_lockup,
 	.insert_nop = amdgpu_ring_insert_nop,
 };
 
@@ -5590,7 +5584,6 @@ static const struct amdgpu_ring_funcs gfx_v7_0_ring_funcs_compute = {
 	.emit_hdp_flush = gfx_v7_0_ring_emit_hdp_flush,
 	.test_ring = gfx_v7_0_ring_test_ring,
 	.test_ib = gfx_v7_0_ring_test_ib,
-	.is_lockup = gfx_v7_0_ring_is_lockup,
 	.insert_nop = amdgpu_ring_insert_nop,
 };
 

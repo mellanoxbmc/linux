@@ -37,6 +37,7 @@
 #include <linux/irq.h>
 #include <linux/perf_event.h>
 
+#include <asm/addrspace.h>
 #include <asm/bootinfo.h>
 #include <asm/branch.h>
 #include <asm/break.h>
@@ -689,15 +690,15 @@ static int simulate_sync(struct pt_regs *regs, unsigned int opcode)
 asmlinkage void do_ov(struct pt_regs *regs)
 {
 	enum ctx_state prev_state;
-	siginfo_t info;
+	siginfo_t info = {
+		.si_signo = SIGFPE,
+		.si_code = FPE_INTOVF,
+		.si_addr = (void __user *)regs->cp0_epc,
+	};
 
 	prev_state = exception_enter();
 	die_if_kernel("Integer overflow", regs);
 
-	info.si_code = FPE_INTOVF;
-	info.si_signo = SIGFPE;
-	info.si_errno = 0;
-	info.si_addr = (void __user *) regs->cp0_epc;
 	force_sig_info(SIGFPE, &info, current);
 	exception_exit(prev_state);
 }
@@ -873,7 +874,7 @@ out:
 void do_trap_or_bp(struct pt_regs *regs, unsigned int code,
 	const char *str)
 {
-	siginfo_t info;
+	siginfo_t info = { 0 };
 	char b[40];
 
 #ifdef CONFIG_KGDB_LOW_LEVEL_TRAP
@@ -902,7 +903,6 @@ void do_trap_or_bp(struct pt_regs *regs, unsigned int code,
 		else
 			info.si_code = FPE_INTOVF;
 		info.si_signo = SIGFPE;
-		info.si_errno = 0;
 		info.si_addr = (void __user *) regs->cp0_epc;
 		force_sig_info(SIGFPE, &info, current);
 		break;
@@ -1856,12 +1856,14 @@ void __noreturn nmi_exception_handler(struct pt_regs *regs)
 {
 	char str[100];
 
+	nmi_enter();
 	raw_notifier_call_chain(&nmi_chain, 0, regs);
 	bust_spinlocks(1);
 	snprintf(str, 100, "CPU%d NMI taken, CP0_EPC=%lx\n",
 		 smp_processor_id(), regs->cp0_epc);
 	regs->cp0_epc = read_c0_errorepc();
 	die(str, regs);
+	nmi_exit();
 }
 
 #define VECTORSPACING 0x100	/* for EI/VI mode */
@@ -2204,12 +2206,8 @@ void __init trap_init(void)
 		ebase = (unsigned long)
 			__alloc_bootmem(size, 1 << fls(size), 0);
 	} else {
-#ifdef CONFIG_KVM_GUEST
-#define KVM_GUEST_KSEG0     0x40000000
-        ebase = KVM_GUEST_KSEG0;
-#else
-        ebase = CKSEG0;
-#endif
+		ebase = CAC_BASE;
+
 		if (cpu_has_mips_r2_r6)
 			ebase += (read_c0_ebase() & 0x3ffff000);
 	}

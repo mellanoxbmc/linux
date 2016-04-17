@@ -1113,16 +1113,16 @@ ieee80211_rx_h_check_dup(struct ieee80211_rx_data *rx)
 	    is_multicast_ether_addr(hdr->addr1))
 		return RX_CONTINUE;
 
-	if (rx->sta) {
-		if (unlikely(ieee80211_has_retry(hdr->frame_control) &&
-			     rx->sta->last_seq_ctrl[rx->seqno_idx] ==
-			     hdr->seq_ctrl)) {
-			I802_DEBUG_INC(rx->local->dot11FrameDuplicateCount);
-			rx->sta->num_duplicates++;
-			return RX_DROP_UNUSABLE;
-		} else if (!(status->flag & RX_FLAG_AMSDU_MORE)) {
-			rx->sta->last_seq_ctrl[rx->seqno_idx] = hdr->seq_ctrl;
-		}
+	if (!rx->sta)
+		return RX_CONTINUE;
+
+	if (unlikely(ieee80211_has_retry(hdr->frame_control) &&
+		     rx->sta->last_seq_ctrl[rx->seqno_idx] == hdr->seq_ctrl)) {
+		I802_DEBUG_INC(rx->local->dot11FrameDuplicateCount);
+		rx->sta->rx_stats.num_duplicates++;
+		return RX_DROP_UNUSABLE;
+	} else if (!(status->flag & RX_FLAG_AMSDU_MORE)) {
+		rx->sta->last_seq_ctrl[rx->seqno_idx] = hdr->seq_ctrl;
 	}
 
 	return RX_CONTINUE;
@@ -1396,51 +1396,56 @@ ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 						NL80211_IFTYPE_ADHOC);
 		if (ether_addr_equal(bssid, rx->sdata->u.ibss.bssid) &&
 		    test_sta_flag(sta, WLAN_STA_AUTHORIZED)) {
-			sta->last_rx = jiffies;
+			sta->rx_stats.last_rx = jiffies;
 			if (ieee80211_is_data(hdr->frame_control) &&
 			    !is_multicast_ether_addr(hdr->addr1)) {
-				sta->last_rx_rate_idx = status->rate_idx;
-				sta->last_rx_rate_flag = status->flag;
-				sta->last_rx_rate_vht_flag = status->vht_flag;
-				sta->last_rx_rate_vht_nss = status->vht_nss;
+				sta->rx_stats.last_rate_idx =
+					status->rate_idx;
+				sta->rx_stats.last_rate_flag =
+					status->flag;
+				sta->rx_stats.last_rate_vht_flag =
+					status->vht_flag;
+				sta->rx_stats.last_rate_vht_nss =
+					status->vht_nss;
 			}
 		}
 	} else if (rx->sdata->vif.type == NL80211_IFTYPE_OCB) {
-		sta->last_rx = jiffies;
+		sta->rx_stats.last_rx = jiffies;
 	} else if (!is_multicast_ether_addr(hdr->addr1)) {
 		/*
 		 * Mesh beacons will update last_rx when if they are found to
 		 * match the current local configuration when processed.
 		 */
-		sta->last_rx = jiffies;
+		sta->rx_stats.last_rx = jiffies;
 		if (ieee80211_is_data(hdr->frame_control)) {
-			sta->last_rx_rate_idx = status->rate_idx;
-			sta->last_rx_rate_flag = status->flag;
-			sta->last_rx_rate_vht_flag = status->vht_flag;
-			sta->last_rx_rate_vht_nss = status->vht_nss;
+			sta->rx_stats.last_rate_idx = status->rate_idx;
+			sta->rx_stats.last_rate_flag = status->flag;
+			sta->rx_stats.last_rate_vht_flag = status->vht_flag;
+			sta->rx_stats.last_rate_vht_nss = status->vht_nss;
 		}
 	}
 
 	if (rx->sdata->vif.type == NL80211_IFTYPE_STATION)
 		ieee80211_sta_rx_notify(rx->sdata, hdr);
 
-	sta->rx_fragments++;
-	sta->rx_bytes += rx->skb->len;
+	sta->rx_stats.fragments++;
+	sta->rx_stats.bytes += rx->skb->len;
 	if (!(status->flag & RX_FLAG_NO_SIGNAL_VAL)) {
-		sta->last_signal = status->signal;
-		ewma_signal_add(&sta->avg_signal, -status->signal);
+		sta->rx_stats.last_signal = status->signal;
+		ewma_signal_add(&sta->rx_stats.avg_signal, -status->signal);
 	}
 
 	if (status->chains) {
-		sta->chains = status->chains;
+		sta->rx_stats.chains = status->chains;
 		for (i = 0; i < ARRAY_SIZE(status->chain_signal); i++) {
 			int signal = status->chain_signal[i];
 
 			if (!(status->chains & BIT(i)))
 				continue;
 
-			sta->chain_signal_last[i] = signal;
-			ewma_signal_add(&sta->chain_signal_avg[i], -signal);
+			sta->rx_stats.chain_signal_last[i] = signal;
+			ewma_signal_add(&sta->rx_stats.chain_signal_avg[i],
+					-signal);
 		}
 	}
 
@@ -1500,7 +1505,7 @@ ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 		 * Update counter and free packet here to avoid
 		 * counting this as a dropped packed.
 		 */
-		sta->rx_packets++;
+		sta->rx_stats.packets++;
 		dev_kfree_skb(rx->skb);
 		return RX_QUEUED;
 	}
@@ -1749,7 +1754,7 @@ ieee80211_reassemble_add(struct ieee80211_sub_if_data *sdata,
 	entry->seq = seq;
 	entry->rx_queue = rx_queue;
 	entry->last_frag = frag;
-	entry->ccmp = 0;
+	entry->check_sequential_pn = false;
 	entry->extra_len = 0;
 
 	return entry;
@@ -1845,15 +1850,27 @@ ieee80211_rx_h_defragment(struct ieee80211_rx_data *rx)
 						 rx->seqno_idx, &(rx->skb));
 		if (rx->key &&
 		    (rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP ||
-		     rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP_256) &&
+		     rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP_256 ||
+		     rx->key->conf.cipher == WLAN_CIPHER_SUITE_GCMP ||
+		     rx->key->conf.cipher == WLAN_CIPHER_SUITE_GCMP_256) &&
 		    ieee80211_has_protected(fc)) {
 			int queue = rx->security_idx;
-			/* Store CCMP PN so that we can verify that the next
-			 * fragment has a sequential PN value. */
-			entry->ccmp = 1;
+
+			/* Store CCMP/GCMP PN so that we can verify that the
+			 * next fragment has a sequential PN value.
+			 */
+			entry->check_sequential_pn = true;
 			memcpy(entry->last_pn,
 			       rx->key->u.ccmp.rx_pn[queue],
 			       IEEE80211_CCMP_PN_LEN);
+			BUILD_BUG_ON(offsetof(struct ieee80211_key,
+					      u.ccmp.rx_pn) !=
+				     offsetof(struct ieee80211_key,
+					      u.gcmp.rx_pn));
+			BUILD_BUG_ON(sizeof(rx->key->u.ccmp.rx_pn[queue]) !=
+				     sizeof(rx->key->u.gcmp.rx_pn[queue]));
+			BUILD_BUG_ON(IEEE80211_CCMP_PN_LEN !=
+				     IEEE80211_GCMP_PN_LEN);
 		}
 		return RX_QUEUED;
 	}
@@ -1868,15 +1885,21 @@ ieee80211_rx_h_defragment(struct ieee80211_rx_data *rx)
 		return RX_DROP_MONITOR;
 	}
 
-	/* Verify that MPDUs within one MSDU have sequential PN values.
-	 * (IEEE 802.11i, 8.3.3.4.5) */
-	if (entry->ccmp) {
+	/* "The receiver shall discard MSDUs and MMPDUs whose constituent
+	 *  MPDU PN values are not incrementing in steps of 1."
+	 * see IEEE P802.11-REVmc/D5.0, 12.5.3.4.4, item d (for CCMP)
+	 * and IEEE P802.11-REVmc/D5.0, 12.5.5.4.4, item d (for GCMP)
+	 */
+	if (entry->check_sequential_pn) {
 		int i;
 		u8 pn[IEEE80211_CCMP_PN_LEN], *rpn;
 		int queue;
+
 		if (!rx->key ||
 		    (rx->key->conf.cipher != WLAN_CIPHER_SUITE_CCMP &&
-		     rx->key->conf.cipher != WLAN_CIPHER_SUITE_CCMP_256))
+		     rx->key->conf.cipher != WLAN_CIPHER_SUITE_CCMP_256 &&
+		     rx->key->conf.cipher != WLAN_CIPHER_SUITE_GCMP &&
+		     rx->key->conf.cipher != WLAN_CIPHER_SUITE_GCMP_256))
 			return RX_DROP_UNUSABLE;
 		memcpy(pn, entry->last_pn, IEEE80211_CCMP_PN_LEN);
 		for (i = IEEE80211_CCMP_PN_LEN - 1; i >= 0; i--) {
@@ -1922,7 +1945,7 @@ ieee80211_rx_h_defragment(struct ieee80211_rx_data *rx)
 	ieee80211_led_rx(rx->local);
  out_no_led:
 	if (rx->sta)
-		rx->sta->rx_packets++;
+		rx->sta->rx_stats.packets++;
 	return RX_CONTINUE;
 }
 
@@ -2376,7 +2399,7 @@ ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
 		 * for non-QoS-data frames. Here we know it's a data
 		 * frame, so count MSDUs.
 		 */
-		rx->sta->rx_msdu[rx->seqno_idx]++;
+		rx->sta->rx_stats.msdu[rx->seqno_idx]++;
 	}
 
 	/*
@@ -2413,7 +2436,7 @@ ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
 			skb_queue_tail(&local->skb_queue_tdls_chsw, rx->skb);
 			schedule_work(&local->tdls_chsw_work);
 			if (rx->sta)
-				rx->sta->rx_packets++;
+				rx->sta->rx_stats.packets++;
 
 			return RX_QUEUED;
 		}
@@ -2731,8 +2754,7 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 			opmode = mgmt->u.action.u.vht_opmode_notif.operating_mode;
 
 			ieee80211_vht_handle_opmode(rx->sdata, rx->sta,
-						    opmode, status->band,
-						    false);
+						    opmode, status->band);
 			goto handled;
 		}
 		default:
@@ -2875,7 +2897,7 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 
  handled:
 	if (rx->sta)
-		rx->sta->rx_packets++;
+		rx->sta->rx_stats.packets++;
 	dev_kfree_skb(rx->skb);
 	return RX_QUEUED;
 
@@ -2884,7 +2906,7 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 	skb_queue_tail(&sdata->skb_queue, rx->skb);
 	ieee80211_queue_work(&local->hw, &sdata->work);
 	if (rx->sta)
-		rx->sta->rx_packets++;
+		rx->sta->rx_stats.packets++;
 	return RX_QUEUED;
 }
 
@@ -2911,7 +2933,7 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 	if (cfg80211_rx_mgmt(&rx->sdata->wdev, status->freq, sig,
 			     rx->skb->data, rx->skb->len, 0)) {
 		if (rx->sta)
-			rx->sta->rx_packets++;
+			rx->sta->rx_stats.packets++;
 		dev_kfree_skb(rx->skb);
 		return RX_QUEUED;
 	}
@@ -3030,7 +3052,7 @@ ieee80211_rx_h_mgmt(struct ieee80211_rx_data *rx)
 	skb_queue_tail(&sdata->skb_queue, rx->skb);
 	ieee80211_queue_work(&rx->local->hw, &sdata->work);
 	if (rx->sta)
-		rx->sta->rx_packets++;
+		rx->sta->rx_stats.packets++;
 
 	return RX_QUEUED;
 }
@@ -3112,7 +3134,7 @@ static void ieee80211_rx_handlers_result(struct ieee80211_rx_data *rx,
 	case RX_DROP_MONITOR:
 		I802_DEBUG_INC(rx->sdata->local->rx_handlers_drop);
 		if (rx->sta)
-			rx->sta->rx_dropped++;
+			rx->sta->rx_stats.dropped++;
 		/* fall through */
 	case RX_CONTINUE: {
 		struct ieee80211_rate *rate = NULL;
@@ -3132,7 +3154,7 @@ static void ieee80211_rx_handlers_result(struct ieee80211_rx_data *rx,
 	case RX_DROP_UNUSABLE:
 		I802_DEBUG_INC(rx->sdata->local->rx_handlers_drop);
 		if (rx->sta)
-			rx->sta->rx_dropped++;
+			rx->sta->rx_stats.dropped++;
 		dev_kfree_skb(rx->skb);
 		break;
 	case RX_QUEUED:
@@ -3363,6 +3385,7 @@ static bool ieee80211_accept_frame(struct ieee80211_rx_data *rx)
 				return false;
 			/* ignore action frames to TDLS-peers */
 			if (ieee80211_is_action(hdr->frame_control) &&
+			    !is_broadcast_ether_addr(bssid) &&
 			    !ether_addr_equal(bssid, hdr->addr1))
 				return false;
 		}

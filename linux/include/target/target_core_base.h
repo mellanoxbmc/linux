@@ -138,6 +138,7 @@ enum se_cmd_flags_table {
 	SCF_COMPARE_AND_WRITE		= 0x00080000,
 	SCF_COMPARE_AND_WRITE_POST	= 0x00100000,
 	SCF_PASSTHROUGH_PROT_SG_TO_MEM_NOALLOC = 0x00200000,
+	SCF_ACK_KREF			= 0x00400000,
 };
 
 /* struct se_dev_entry->lun_flags and struct se_lun->lun_access */
@@ -474,7 +475,7 @@ struct se_cmd {
 	struct completion	cmd_wait_comp;
 	const struct target_core_fabric_ops *se_tfo;
 	sense_reason_t		(*execute_cmd)(struct se_cmd *);
-	sense_reason_t (*transport_complete_callback)(struct se_cmd *, bool);
+	sense_reason_t (*transport_complete_callback)(struct se_cmd *, bool, int *);
 	void			*protocol_data;
 
 	unsigned char		*t_task_cdb;
@@ -490,6 +491,8 @@ struct se_cmd {
 #define CMD_T_DEV_ACTIVE	(1 << 7)
 #define CMD_T_REQUEST_STOP	(1 << 8)
 #define CMD_T_BUSY		(1 << 9)
+#define CMD_T_TAS		(1 << 10)
+#define CMD_T_FABRIC_STOP	(1 << 11)
 	spinlock_t		t_state_lock;
 	struct kref		cmd_kref;
 	struct completion	t_transport_stop_comp;
@@ -562,6 +565,36 @@ struct se_node_acl {
 	struct completion	acl_free_comp;
 	struct kref		acl_kref;
 };
+
+static inline struct se_node_acl *acl_to_nacl(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_node_acl,
+			acl_group);
+}
+
+static inline struct se_node_acl *attrib_to_nacl(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_node_acl,
+			acl_attrib_group);
+}
+
+static inline struct se_node_acl *auth_to_nacl(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_node_acl,
+			acl_auth_group);
+}
+
+static inline struct se_node_acl *param_to_nacl(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_node_acl,
+			acl_param_group);
+}
+
+static inline struct se_node_acl *fabric_stat_to_nacl(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_node_acl,
+			acl_fabric_stat_group);
+}
 
 struct se_session {
 	unsigned		sess_tearing_down:1;
@@ -821,6 +854,12 @@ struct se_tpg_np {
 	struct config_group	tpg_np_group;
 };
 
+static inline struct se_tpg_np *to_tpg_np(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_tpg_np,
+			tpg_np_group);
+}
+
 struct se_portal_group {
 	/*
 	 * PROTOCOL IDENTIFIER value per SPC4, 7.5.1.
@@ -856,6 +895,30 @@ struct se_portal_group {
 	struct config_group	tpg_auth_group;
 	struct config_group	tpg_param_group;
 };
+
+static inline struct se_portal_group *to_tpg(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_portal_group,
+			tpg_group);
+}
+
+static inline struct se_portal_group *attrib_to_tpg(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_portal_group,
+			tpg_attrib_group);
+}
+
+static inline struct se_portal_group *auth_to_tpg(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_portal_group,
+			tpg_auth_group);
+}
+
+static inline struct se_portal_group *param_to_tpg(struct config_item *item)
+{
+	return container_of(to_config_group(item), struct se_portal_group,
+			tpg_param_group);
+}
 
 struct se_wwn {
 	struct target_fabric_configfs *wwn_tf;
