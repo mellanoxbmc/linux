@@ -1817,4 +1817,6 @@ config SENSORS_ATK0110
 
 endif # ACPI
 
+source drivers/hwmon/mellanox/Kconfig
+
 endif # HWMON
