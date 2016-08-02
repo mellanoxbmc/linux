@@ -1,0 +1,2 @@
+/sbin/halt
+/bin/busybox.nosuid 50

@@ -1,0 +1,2 @@
+/sbin/poweroff
+/bin/busybox.nosuid 50

@@ -1,0 +1,10 @@
+arm-openbmc-linux-gnueabi
+ast2500_evb-.*-linux.*
+armv6-.*-linux.*
+armv5e-.*-linux.*
+armv5-.*-linux.*
+armv4-.*-linux.*
+arm-.*-linux.*
+noarch-.*-linux.*
+any-.*-linux.*
+all-.*-linux.*
