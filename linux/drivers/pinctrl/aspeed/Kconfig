@@ -1,0 +1,5 @@
+config PINCTRL_ASPEED_JTAG
+	tristate "ASPEED JTAG control"
+	default n
+	help
+	 Driver for ASPEED JTAG controller driver
