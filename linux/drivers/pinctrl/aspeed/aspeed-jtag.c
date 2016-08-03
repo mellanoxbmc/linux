@@ -605,7 +605,7 @@ static irqreturn_t aspeed_jtag_interrupt(int this_irq, void *dev_id)
 		wake_up_interruptible(&aspeed_jtag->jtag_wq);
 		return IRQ_HANDLED;
 	} else {
-		dev_err("aspeed_jtag->dev, "aspeed_jtag irq status (%x)\n",
+		dev_err(aspeed_jtag->dev, "aspeed_jtag irq status (%x)\n",
 			status);
 		return IRQ_NONE;
 	}
@@ -721,7 +721,7 @@ static ssize_t show_frequency(struct device *dev,
 static ssize_t store_frequency(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	u32 input_val;
+	unsigned long input_val;
 	struct aspeed_jtag_info *aspeed_jtag = dev_get_drvdata(dev);
 	int ret;
 
