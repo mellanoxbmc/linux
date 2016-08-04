@@ -1,0 +1,12 @@
+menu "ASPEED devices support"
+
+config ASPEED_PECI
+	tristate "Aspeed PECI driver"
+	depends on I2C
+	default n
+	help
+	  This option enables Aspeed PECI driver support.
+
+	  If unsure, say N.
+
+endmenu
