@@ -847,6 +847,11 @@ CONFIG_EEPROM_93CX6=y
 # CONFIG_CXL_EEH is not set
 
 #
+# Aspeed PECI driver
+#
+CONFIG_ASPEED_PECI=y
+
+#
 # SCSI device support
 #
 CONFIG_SCSI_MOD=y
