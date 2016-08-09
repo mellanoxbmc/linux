@@ -11,14 +11,15 @@
  *
  *  History:
  *    2012.08.06: Initial version [Ryan Chen]
+ *    2016.08.06: Porting to kernel 4.7 [Vadim Pasternak vadimp@mellanox.com]
  */
 
-#include <linux/delay.h>
-#include <linux/platform_device.h>
+
+#include <linux/init.h>
+#include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/timer.h>
-#include <linux/mutex.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/hwmon.h>
 #include <linux/workqueue.h>
@@ -26,7 +27,13 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/io.h>
+#include <linux/platform_device.h>
+#include <linux/of_address.h>
+#include <linux/of_platform.h>
 #include <asm/irq.h>
+#include <asm/mach-types.h>
+#include <asm/mach/arch.h>
+#include <mach/reset.h>
 
 /* CLK sysfs
  * 0 : enable
@@ -58,19 +65,11 @@
  *  4 - show/store limit
  */
 
-#define AST_BASE_SCU            0x1E6E2000
-#define AST_SCU_RESET		0x04	/* System reset control register */
-#define SCU_RESET_PWM		(0x1 << 2)
 #define AST_SCU_FUN_PIN_CTRL1	0x80	/* Multi-function Pin Control#1 */
 #define AST_SCU_FUN_PIN_CTRL2	0x84	/* Multi-function Pin Control#2 */
 #define AST_SCU_FUN_PIN_CTRL3	0x88	/* Multi-function Pin Control#3 */
 #define AST_SCU_FUN_PIN_CTRL4	0x8C	/* Multi-function Pin Control#4 */
 #define AST_SCU_FUN_PIN_CTRL5	0x90	/* Multi-function Pin Control#5 */
-#define SCU_PROTECT_UNLOCK	0x1688A8A8
-#define AST_IO_VA		0xf0000000
-#define AST_IO_PA		0x1e600000
-#define AST_IO_SZ		0x00200000
-#define AST_IO(__pa)	((void __iomem *)(((__pa) & 0x001fffff) | AST_IO_VA))
 #define AST_PWM_GROUP_NUM	(1 + PWM_CH_NUM + 2 * PWM_TYPE_NUM + TACHO_NUM)
 
 /* Aspeed PWM & FAN Register Definition */
@@ -357,39 +356,6 @@ aspeed_pwm_tacho_read(struct aspeed_pwm_tacho_data *aspeed_pwm_tacho, u32 reg)
 {
 	return readl(aspeed_pwm_tacho->reg_base + reg);
 }
-
-spinlock_t aspeed_scu_lock;
-static inline u32 aspeed_scu_read(u32 reg)
-{
-	return readl(AST_IO(AST_BASE_SCU) + reg);
-}
-
-static inline void aspeed_scu_write(u32 val, u32 reg)
-{
-	writel(SCU_PROTECT_UNLOCK, AST_IO(AST_BASE_SCU));
-	writel(val, AST_IO(AST_BASE_SCU) + reg);
-}
-
-void aspeed_scu_multi_func_pwm_tacho(void)
-{
-	u32 sts = 0;
-
-	spin_lock(&aspeed_scu_lock);
-	sts = aspeed_scu_read(AST_SCU_FUN_PIN_CTRL3) & ~0xcfffff;
-	aspeed_scu_write(sts | 0xc000ff, AST_SCU_FUN_PIN_CTRL3);
-	spin_unlock(&aspeed_scu_lock);
-}
-
-void aspeed_scu_init_pwm_tacho(void)
-{
-	spin_lock(&aspeed_scu_lock);
-	aspeed_scu_write(aspeed_scu_read(AST_SCU_RESET) |
-			 SCU_RESET_PWM, AST_SCU_RESET);
-	aspeed_scu_write(aspeed_scu_read(AST_SCU_RESET) & ~SCU_RESET_PWM,
-			 AST_SCU_RESET);
-	spin_unlock(&aspeed_scu_lock);
-}
-
 
 /*
  * (1) The PWM base clock = 24Mhz / (Clock_Division_H D[7:4] in PTCR04 *
@@ -2622,11 +2588,9 @@ aspeed_pwm_tacho_probe(struct platform_device *pdev)
 	int i, j = 0;
 	int err = 0;
 
-	/* SCU Pin-MUX PWM & TACHO */
-	aspeed_scu_multi_func_pwm_tacho();
-
-	/* SCU PWM CTRL Reset */
-	aspeed_scu_init_pwm_tacho();
+	if (!of_device_is_compatible(pdev->dev.of_node,
+				     "aspeed,aspeed2500-pwm-fan"))
+		return -ENODEV;
 
 	aspeed_pwm_tacho = devm_kzalloc(&pdev->dev, sizeof(*aspeed_pwm_tacho),
 					GFP_KERNEL);
@@ -2635,7 +2599,8 @@ aspeed_pwm_tacho_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	aspeed_pwm_tacho->aspeed_pwm_data = pdev->dev.platform_data;
+	aspeed_pwm_tacho->aspeed_pwm_data = dev_get_platdata(&pdev->dev);
+	platform_set_drvdata(pdev, aspeed_pwm_tacho);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -2681,16 +2646,24 @@ aspeed_pwm_tacho_probe(struct platform_device *pdev)
 	aspeed_pwm_tacho->groups[j] = NULL;
 
 	aspeed_pwm_tacho->hwmon_dev = devm_hwmon_device_register_with_groups(
-						&pdev->dev, "aspeed-pwm-tacho",
+						&pdev->dev, "aspeed_pwm_tacho",
 						aspeed_pwm_tacho,
 						aspeed_pwm_tacho->groups);
 
-	if (IS_ERR(aspeed_pwm_tacho->hwmon_dev)) {
+	if (PTR_ERR_OR_ZERO(aspeed_pwm_tacho->hwmon_dev)) {
+		dev_err(&pdev->dev, "cannot register hwmon\n");
 		err = PTR_ERR(aspeed_pwm_tacho->hwmon_dev);
 		goto out_region;
 	}
 
+	/* SCU Pin-MUX PWM & TACHO */
+	aspeed_scu_multi_func_reset(AST_SCU_FUN_PIN_CTRL3, 0xcfffff, 0xc000ff);
+
+	/* SCU PWM CTRL Reset */
+	aspeed_toggle_scu_reset(SCU_RESET_PWM, 3);
+
 	aspeed_pwm_taco_init();
+
 	dev_info(&pdev->dev, "aspeed pwm tacho: driver successfully loaded.\n");
 
 	return 0;
@@ -2739,18 +2712,25 @@ aspeed_pwm_tacho_resume(struct platform_device *pdev)
 #define aspeed_pwm_tacho_resume         NULL
 #endif
 
+static const struct of_device_id aspeed_pwm_fan_of_table[] = {
+	{ .compatible = "aspeed,aspeed2500-pwm-fan", },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, aspeed_pwm_fan_of_table);
+
 static struct platform_driver aspeed_pwm_tacho_driver = {
 	.remove		= aspeed_pwm_tacho_remove,
 	.suspend	= aspeed_pwm_tacho_suspend,
 	.resume		= aspeed_pwm_tacho_resume,
 	.driver		= {
-		.name   = "aspeed_pwm_tacho",
+		.name   = KBUILD_MODNAME,
 		.owner  = THIS_MODULE,
+		.of_match_table = aspeed_pwm_fan_of_table,
 	},
 };
-
 module_platform_driver_probe(aspeed_pwm_tacho_driver, aspeed_pwm_tacho_probe);
 
 MODULE_AUTHOR("Ryan Chen <ryan_chen@aspeedtech.com>");
-MODULE_DESCRIPTION("AST PWM TACHO driver");
+MODULE_DESCRIPTION("ASPEED PWM TACHO driver");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:aspeed-pwm-fan");

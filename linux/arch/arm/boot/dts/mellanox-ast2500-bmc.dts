@@ -1,5 +1,7 @@
 /dts-v1/;
 
+#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/pwm/pwm.h>
 #include "aspeed-g5-mlx.dtsi"
 
 / {
@@ -30,7 +32,6 @@
 
 &mac0 {
         status = "okay";
-        use-nc-si;
 };
 
 &mac1 {
@@ -93,3 +94,16 @@
 &i2c13 {
 	status = "okay";
 };
+
+&pwm {
+	status = "okay";
+};
+
+&peci {
+	status = "okay";
+};
+
+&jtag {
+	status = "okay";
+};
+

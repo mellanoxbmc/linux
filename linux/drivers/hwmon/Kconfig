@@ -1789,14 +1789,6 @@ config SENSORS_ULTRA45
 	  This driver provides support for the Ultra45 workstation environmental
 	  sensors.
 
-config SENSORS_ASPEED_PWM_FAN
-        tristate "ASPEED PWM & FAN Tacho Controller Driver"
-        depends on ARCH_ASPEED
-        default n
-        help
-          This driver provides support for the ASPEED PWM & FAN Tachometer
-          Controller, which provides an Sensor, fan control.
-
 if ACPI
 
 comment "ACPI drivers"
@@ -1825,6 +1817,7 @@ config SENSORS_ATK0110
 
 endif # ACPI
 
+source drivers/hwmon/aspeed/Kconfig
 source drivers/hwmon/mellanox/Kconfig
 
 endif # HWMON

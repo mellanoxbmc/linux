@@ -213,6 +213,36 @@
 				status = "disabled";
 			};
 
+			pwm: pwm@1e786000 {
+				cooling-min-level = <0>;
+				cooling-max-level = <3>;
+				#cooling-cells = <2>; /* min followed by max */
+				compatible = "aspeed,aspeed2500-pwm-fan";
+				reg = <0x1e786000 0x7c>;
+				reg-shift = <2>;
+				interrupts = <28>;
+				status = "disabled";
+			};
+
+			peci: peci@1e78b000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				#interrupt-cells = <1>;
+				compatible = "aspeed,aspeed2500-peci";
+				reg = <0x1e78b000 0x60>;
+				reg-shift = <2>;
+				interrupts = <15>;
+				status = "disabled";
+			};
+
+			jtag: jtag@1e6e4000 {
+				compatible = "aspeed,aspeed2500-jtag";
+				reg = <0x1e6e4000 0x1c>;
+				reg-shift = <2>;
+				interrupts = <43>;
+				status = "disabled";
+			};
+
 			i2c: i2c@1e78a000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
@@ -393,9 +423,7 @@
 					interrupts = <13>;
                                         interrupt-parent = <&i2c>;
 				};
-
 			};
-
 		};
 	};
 };

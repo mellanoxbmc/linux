@@ -19,7 +19,6 @@
 #include <linux/miscdevice.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
-#include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
@@ -27,6 +26,11 @@
 #include <linux/sysfs.h>
 #include <linux/fs.h>
 #include <linux/delay.h>
+#include <linux/of_address.h>
+#include <linux/of_platform.h>
+#include <asm/mach-types.h>
+#include <asm/mach/arch.h>
+#include <mach/reset.h>
 
 #define AST_JTAG_DATA			0x00
 #define AST_JTAG_INST			0x04
@@ -141,7 +145,7 @@ aspeed_jtag_read(struct aspeed_jtag_info *aspeed_jtag, u32 reg)
 static inline void
 aspeed_jtag_write(struct aspeed_jtag_info *aspeed_jtag, u32 val, u32 reg)
 {
-	dev_err(aspeed_jtag->dev, "reg = 0x%08x, val = 0x%08x\n", reg, val);
+	dev_dbg(aspeed_jtag->dev, "reg = 0x%08x, val = 0x%08x\n", reg, val);
 	writel(val, aspeed_jtag->reg_base + reg);
 }
 
@@ -772,7 +776,9 @@ static int aspeed_jtag_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret = 0;
 
-	/* ast_scu_init_jtag(); */
+	if (!of_device_is_compatible(pdev->dev.of_node,
+				     "aspeed,aspeed2500-jtag"))
+		return -ENODEV;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -781,18 +787,12 @@ static int aspeed_jtag_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	if (!request_mem_region(res->start, resource_size(res), res->name)) {
-		dev_err(&pdev->dev, "cannot reserved region\n");
-		ret = -ENXIO;
-		goto out;
-	}
-
 	aspeed_jtag = devm_kzalloc(&pdev->dev, sizeof(*aspeed_jtag),
 				   GFP_KERNEL);
 	if (!aspeed_jtag)
 		return -ENOMEM;
 
-	aspeed_jtag->reg_base = ioremap(res->start, resource_size(res));
+	aspeed_jtag->reg_base = devm_ioremap_resource(&pdev->dev, res);
 	if (!aspeed_jtag->reg_base) {
 		ret = -EIO;
 		goto out_region;
@@ -804,6 +804,9 @@ static int aspeed_jtag_probe(struct platform_device *pdev)
 		ret = -ENOENT;
 		goto out_region;
 	}
+
+	/* Init JTAG */
+	aspeed_toggle_scu_reset(SCU_RESET_JTAG, 3);
 
 	/* Eanble Clock */
 	aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN | JTAG_ENG_OUT_EN,
@@ -899,17 +902,25 @@ aspeed_jtag_resume(struct platform_device *pdev)
 #define aspeed_jtag_resume         NULL
 #endif
 
+static const struct of_device_id aspeed_jtag_of_table[] = {
+	{ .compatible = "aspeed,aspeed2500-jtag", },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, aspeed_jtag_of_table);
+
 static struct platform_driver aspeed_jtag_driver = {
+	.probe		= aspeed_jtag_probe,
 	.remove		= aspeed_jtag_remove,
 	.suspend	= aspeed_jtag_suspend,
 	.resume		= aspeed_jtag_resume,
 	.driver         = {
-		.name	= "aspeed-jtag",
+		.name	= KBUILD_MODNAME,
 		.owner	= THIS_MODULE,
+		.of_match_table = aspeed_jtag_of_table,
 	},
 };
 
-module_platform_driver_probe(aspeed_jtag_driver, aspeed_jtag_probe);
+module_platform_driver(aspeed_jtag_driver);
 
 MODULE_AUTHOR("Ryan Chen <ryan_chen@aspeedtech.com>");
 MODULE_DESCRIPTION("AST JTAG LIB Driver");

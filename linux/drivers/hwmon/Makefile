@@ -44,7 +44,6 @@ obj-$(CONFIG_SENSORS_ADT7462)	+= adt7462.o
 obj-$(CONFIG_SENSORS_ADT7470)	+= adt7470.o
 obj-$(CONFIG_SENSORS_ADT7475)	+= adt7475.o
 obj-$(CONFIG_SENSORS_APPLESMC)	+= applesmc.o
-obj-$(CONFIG_SENSORS_ASPEED_PWM_FAN)	+= aspeed-pwm-fan.o
 obj-$(CONFIG_SENSORS_ARM_SCPI)	+= scpi-hwmon.o
 obj-$(CONFIG_SENSORS_ASC7621)	+= asc7621.o
 obj-$(CONFIG_SENSORS_ATXP1)	+= atxp1.o
@@ -165,8 +164,8 @@ obj-$(CONFIG_SENSORS_WM831X)	+= wm831x-hwmon.o
 obj-$(CONFIG_SENSORS_WM8350)	+= wm8350-hwmon.o
 
 obj-$(CONFIG_PMBUS)		+= pmbus/
+obj-$(CONFIG_MACH_ASPEED_G5)	+= aspeed/
+obj-$(CONFIG_MELLANOX)		+= mellanox/
 
-obj-$(CONFIG_MELLANOX)      	+= mellanox/
-
-ccflags-$(CONFIG_HWMON_DEBUG_CHIP) := -DDEBUG
+ccflags-$(CONFIG_HWMON_DEBUG_CHIP) = -DDEBUG
 

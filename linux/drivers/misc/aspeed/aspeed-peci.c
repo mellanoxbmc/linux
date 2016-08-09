@@ -11,7 +11,7 @@
  *
  *  History:
  *   2013.01.30: Initial version [Ryan Chen]
- *   2016.08.06: Porting to kernel 4.7
+ *   2016.08.06: Porting to kernel 4.7 [Vadim Pasternak vadimp@mellanox.com]
  */
 
 
@@ -25,6 +25,11 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/miscdevice.h>
+#include <linux/configfs.h>
+#include <linux/of_address.h>
+#include <linux/of_platform.h>
+#include <asm/mach-types.h>
+#include <mach/reset.h>
 
 /*AST PECI Register Definition */
 #define AST_PECI_CTRL		0x00
@@ -452,7 +457,9 @@ static int aspeed_peci_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret = 0;
 
-	/* ast_scu_init_peci(); */
+	if (!of_device_is_compatible(pdev->dev.of_node,
+				     "aspeed,aspeed2500-peci"))
+		return -ENODEV;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -461,13 +468,7 @@ static int aspeed_peci_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	if (!request_mem_region(res->start, resource_size(res), res->name)) {
-		dev_err(&pdev->dev, "cannot reserved region\n");
-		ret = -ENXIO;
-		goto out;
-	}
-
-	aspeed_peci.reg_base = ioremap(res->start, resource_size(res));
+	aspeed_peci.reg_base = devm_ioremap_resource(&pdev->dev, res);
 	if (!aspeed_peci.reg_base) {
 		ret = -EIO;
 		goto out_region;
@@ -499,6 +500,9 @@ static int aspeed_peci_probe(struct platform_device *pdev)
 
 	aspeed_peci.misc_dev = &pdev->dev;
 	platform_set_drvdata(pdev, &aspeed_peci);
+
+	/* Reset PECI controller */
+	aspeed_toggle_scu_reset(SCU_RESET_PECI, 3);
 
 	aspeed_peci_ctrl_init();
 	dev_info(&pdev->dev, "aspeed_peci: driver successfully loaded.\n");
@@ -545,17 +549,25 @@ static int aspeed_peci_resume(struct platform_device *pdev)
 #define aspeed_peci_resume         NULL
 #endif
 
+static const struct of_device_id aspeed_peci_of_table[] = {
+	{ .compatible = "aspeed,aspeed2500-peci", },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, aspeed_peci_of_table);
+
 static struct platform_driver aspeed_peci_driver = {
-	.remove			= aspeed_peci_remove,
+	.probe		= aspeed_peci_probe,
+	.remove		= aspeed_peci_remove,
 	.suspend        = aspeed_peci_suspend,
 	.resume         = aspeed_peci_resume,
 	.driver         = {
-		.name   = "aspeed_peci",
+		.name   = KBUILD_MODNAME,
 		.owner  = THIS_MODULE,
+		.of_match_table = aspeed_peci_of_table,
 	},
 };
 
-module_platform_driver_probe(aspeed_peci_driver, aspeed_peci_probe);
+module_platform_driver(aspeed_peci_driver);
 
 MODULE_AUTHOR("Ryan Chen <ryan_chen@aspeedtech.com>");
 MODULE_DESCRIPTION("AST PECI driver");
