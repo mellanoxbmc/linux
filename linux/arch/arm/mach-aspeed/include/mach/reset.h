@@ -23,7 +23,7 @@
 					    */
 
 /* AST_SCU_RESET 0x04 Reset control register */
-#define SCU_RESET_H264		(0x1 << 26) 
+#define SCU_RESET_H264		(0x1 << 26)
 #define SCU_RESET_XDMA		(0x1 << 25)
 #define SCU_RESET_MCTP		(0x1 << 24)
 #define SCU_RESET_P2X		(0x1 << 24)
@@ -32,7 +32,7 @@
 #define SCU_RESET_PCIE_DIR	(0x1 << 21)
 #define SCU_RESET_PCIE		(0x1 << 19)
 #define SCU_RESET_MIC		(0x1 << 18)
-#define SCU_RESET_RFX		(0x1 << 17) 
+#define SCU_RESET_RFX		(0x1 << 17)
 #define SCU_RESET_SD		(0x1 << 16)
 #define SCU_RESET_USB11		(0x1 << 15)
 #define SCU_RESET_USB20		(0x1 << 14)

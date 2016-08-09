@@ -40,7 +40,7 @@ void aspeed_scu_multi_func_reset(u32 reg, u32 amask, u32 omask)
 
 	spin_lock(&aspeed_scu_lock);
 	val = readl(AST_IO(AST_BASE_SCU) + reg);
-	val =~ amask;
+	val &= ~amask;
 	writel(SCU_PROTECT_UNLOCK, AST_IO(AST_BASE_SCU));
 	writel(val | omask, AST_IO(AST_BASE_SCU) + reg);
 	spin_unlock(&aspeed_scu_lock);
