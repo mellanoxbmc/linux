@@ -2,8 +2,10 @@
 * Aspeed SPI Flash Controller
 
 Required properties:
-  - compatible : Should be "aspeed,fmc" for Static Memory Controller (AST2400, AST2300?), or
-		 "aspeed,smc" for the SPI flash controller
+  - compatible : Should be one of
+	"aspeed,ast2400-fmc" for the AST2400 Static Memory Controller
+	"aspeed,ast2500-fmc" for the AST2500 Static Memory Controller
+	"aspeed,ast2400-smc" for the AST2400 SPI flash controller
   - reg : the first contains the register location and length,
           the second through nth contains the memory mapping address and length
 	  for the access window for each chips select
@@ -38,7 +40,7 @@ Child node optional properties:
 Example:
 
 fmc: fmc@1e620000 {
-	compatible = "aspeed,fmc";
+	compatible = "aspeed,ast2400-fmc";
 	reg = < 0x1e620000 0x94
 		0x20000000 0x02000000
 		0x22000000 0x02000000 >;

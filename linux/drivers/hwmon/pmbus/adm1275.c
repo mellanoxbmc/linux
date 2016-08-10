@@ -22,7 +22,6 @@
 #include <linux/slab.h>
 #include <linux/i2c.h>
 #include <linux/bitops.h>
-#include <linux/of.h>
 #include "pmbus.h"
 
 enum chips { adm1075, adm1275, adm1276, adm1278, adm1293, adm1294 };
@@ -345,26 +344,12 @@ static const struct i2c_device_id adm1275_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, adm1275_id);
 
-#ifdef CONFIG_OF
-static const struct of_device_id adm1275_of_match[] = {
-	{ .compatible = "adi,adm1075" },
-	{ .compatible = "adi,adm1275" },
-	{ .compatible = "adi,adm1276" },
-	{ .compatible = "adi,adm1278" },
-	{ .compatible = "adi,adm1293" },
-	{ .compatible = "adi,adm1294" },
-	{ }
-};
-MODULE_DEVICE_TABLE(of, adm1275_of_match);
-#endif
-
 static int adm1275_probe(struct i2c_client *client,
 			 const struct i2c_device_id *id)
 {
 	u8 block_buffer[I2C_SMBUS_BLOCK_MAX + 1];
 	int config, device_config;
 	int ret;
-	u32 r_sense = 1;
 	struct pmbus_driver_info *info;
 	struct adm1275_data *data;
 	const struct i2c_device_id *mid;
@@ -418,12 +403,6 @@ static int adm1275_probe(struct i2c_client *client,
 			    GFP_KERNEL);
 	if (!data)
 		return -ENOMEM;
-
-	ret = of_property_read_u32(client->dev.of_node, "sense-resistor",
-			&r_sense);
-	if (!ret)
-		dev_notice(&client->dev, "using r_sense from dt %d\n",
-				r_sense);
 
 	data->id = mid->driver_data;
 
@@ -521,19 +500,6 @@ static int adm1275_probe(struct i2c_client *client,
 		tindex = 3;
 
 		info->func[0] |= PMBUS_HAVE_PIN | PMBUS_HAVE_STATUS_INPUT;
-
-		/* By default when reset VOUT is not enabled */
-		if (!(config & ADM1278_VOUT_EN)) {
-			config |= ADM1278_VOUT_EN;
-			ret = i2c_smbus_write_byte_data(client,
-					ADM1275_PMON_CONFIG, (u8)config);
-			if (ret < 0) {
-				dev_err(&client->dev,
-					"Fail to write ADM1275_PMON_CONFIG\n");
-				return ret;
-			}
-		}
-
 		if (config & ADM1278_TEMP1_EN)
 			info->func[0] |=
 				PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP;
@@ -611,12 +577,12 @@ static int adm1275_probe(struct i2c_client *client,
 		info->R[PSC_VOLTAGE_OUT] = coefficients[voindex].R;
 	}
 	if (cindex >= 0) {
-		info->m[PSC_CURRENT_OUT] = coefficients[cindex].m * r_sense;
+		info->m[PSC_CURRENT_OUT] = coefficients[cindex].m;
 		info->b[PSC_CURRENT_OUT] = coefficients[cindex].b;
 		info->R[PSC_CURRENT_OUT] = coefficients[cindex].R;
 	}
 	if (pindex >= 0) {
-		info->m[PSC_POWER] = coefficients[pindex].m * r_sense;
+		info->m[PSC_POWER] = coefficients[pindex].m;
 		info->b[PSC_POWER] = coefficients[pindex].b;
 		info->R[PSC_POWER] = coefficients[pindex].R;
 	}
@@ -632,7 +598,6 @@ static int adm1275_probe(struct i2c_client *client,
 static struct i2c_driver adm1275_driver = {
 	.driver = {
 		   .name = "adm1275",
-		   .of_match_table = of_match_ptr(adm1275_of_match),
 		   },
 	.probe = adm1275_probe,
 	.remove = pmbus_do_remove,

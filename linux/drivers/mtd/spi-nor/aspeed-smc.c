@@ -8,11 +8,6 @@
  *
  */
 
-/* See comment by aspeed_smc_from_fifo */
-#ifdef CONFIG_ARM
-#define IO_SPACE_LIMIT (~0UL)
-#endif
-
 #include <linux/bug.h>
 #include <linux/device.h>
 #include <linux/io.h>
@@ -26,90 +21,111 @@
 #include <linux/sysfs.h>
 
 /*
- * On the arm architecture, as of Linux version 4.3, memcpy_fromio
- * stutters discarding some of the bytes read if the destination is
- * unaligned, so we can't use it for reading from a fifo to a buffer
- * of unknown alignment.  Instead use the ins (l, w, b) family
- * to read from the fifo.   However, ARM tries to hide io port
- * accesses from drivers unless there is a PCMCIA or PCI device, so
- * we define the limit before all include files.  There is a
- * check in probe to make sure this will work, as long as the
- * architecture uses an identity iomap.
+ * In user mode bytes all data bytes read or written to the chip decode 
+ * address range are sent to the SPI bus.  The range is treated as a fifo
+ * of arbitratry 1, 2, or 4 byte width but each write has to be aligned
+ * to its size.  The address within the multiple 8kB range is ignored when
+ * sending bytes to the SPI bus.
+ *
+ * On the arm architecture, as of Linux version 4.3, memcpy_fromio and
+ * memcpy_toio on little endian targets use the optimized memcpy routines
+ * that were designed for well behavied memory storage.  These routines
+ * have a stutter if the source and destination are not both word aligned,
+ * once with a duplicate access to the source after aligning the destination
+ * to a word boundary, and once with a duplicate access to the destination
+ * when the final byte count is not word aligned.
+ *
+ * When writing or reading the fifo this stutter discards data or sends
+ * too much data to the fifo and can not be used by this driver.
+ *
+ * While the low level io string routines that implement the insl family do
+ * the desired accesses and memory increments, the cross architecture io
+ * macros make them essentially impossible to use on a memory mapped address
+ * instead of a a token from the call to iomap of an io port.
+ *
+ * These fifo routines use readl and friends to a constant io port and update
+ * the memory buffer pointer and count via explict code.  The final updates
+ * to len are optimistically suppressed.
  */
 
 static void aspeed_smc_from_fifo(void *buf, const void __iomem *iop, size_t len)
 {
-	unsigned long io = (__force unsigned long)iop;
-
 	if (!len)
 		return;
 
-	/* Expect a 4 byte input port.  Otherwise just read bytes */
-	if (unlikely(io & 3)) {
-		insb(io, buf, len);
-		return;
+	/* Expect a 4 byte input port.  Otherwise just read bytes. */
+	if (unlikely((unsigned long)iop & 3)) {
+		while (len--) {
+			*(u8 *)buf = readb(iop);
+			buf++;
+		}
 	}
 
 	/* Align target to word: first byte then half word */
 	if ((unsigned long)buf & 1) {
-		*(u8 *)buf = inb(io);
+		*(u8 *)buf = readb(iop);
 		buf++;
 		len--;
 	}
 	if (((unsigned long)buf & 2) && (len >= 2)) {
-		*(u16 *)buf = inw(io);
+		*(u16 *)buf = readw(iop);
 		buf += 2;
 		len -= 2;
 	}
+
 	/* Transfer words, then remaining halfword and remaining byte */
-	if (len >= 4) {
-		insl(io, buf, len >> 2);
-		buf += len & ~3;
+	while (len >= 4) {
+		*(u32 *)buf = readl(iop);
+		buf += 4;
+		len -= 4;
 	}
 	if (len & 2) {
-		*(u16 *)buf = inw(io);
+		*(u16 *)buf = readw(iop);
 		buf += 2;
 	}
 	if (len & 1) {
-		*(u8 *)buf = inb(io);
+		*(u8 *)buf = readb(iop);
 	}
 }
 
 static void aspeed_smc_to_fifo(void __iomem *iop, const void *buf, size_t len)
 {
-	unsigned long io = (__force unsigned long)iop;
-
 	if (!len)
 		return;
 
-	/* Expect a 4 byte output port.  Otherwise just write bytes */
-	if (io & 3) {
-		outsb(io, buf, len);
+	/* Expect a 4 byte output port.  Otherwise just write bytes. */
+	if ((unsigned long)iop & 3) {
+		while (len--) {
+			writeb(*(u8 *)buf, iop);
+			buf++;
+		}
 		return;
 	}
 
 	/* Align target to word: first byte then half word */
 	if ((unsigned long)buf & 1) {
-		outb(*(u8 *)buf, io);
+		writeb(*(u8 *)buf, iop);
 		buf++;
 		len--;
 	}
 	if (((unsigned long)buf & 2) && (len >= 2)) {
-		outw(*(u16 *)buf, io);
+		writew(*(u16 *)buf, iop);
 		buf += 2;
 		len -= 2;
 	}
+
 	/* Transfer words, then remaining halfword and remaining byte */
-	if (len >= 4) {
-		outsl(io, buf, len >> 2);
-		buf += len & ~(size_t)3;
+	while (len >= 4) {
+		writel(*(u32 *)buf, iop);
+		buf += 4;
+		len -= 4;
 	}
 	if (len & 2) {
-		outw(*(u16 *)buf, io);
+		writew(*(u16 *)buf, iop);
 		buf += 2;
 	}
 	if (len & 1) {
-		outb(*(u8 *)buf, io);
+		writeb(*(u8 *)buf, iop);
 	}
 }
 
@@ -123,7 +139,7 @@ struct aspeed_smc_info {
 	u8 nce;			/* number of chip enables */
 	u8 maxwidth;		/* max width of spi bus */
 	bool hasdma;		/* has dma engine */
-	bool hastype;		/* type shift for ce 0 in cfg reg */
+	bool hastype;		/* flash type field exists in cfg reg */
 	u8 we0;			/* we shift for ce 0 in cfg reg */
 	u8 ctl0;		/* offset in regs of ctl for ce 0 */
 	u8 cfg;			/* offset in regs of cfg */
@@ -177,7 +193,7 @@ struct aspeed_smc_controller {
 	struct mutex mutex;			/* controller access mutex */
 	const struct aspeed_smc_info *info;	/* type info of controller */
 	void __iomem *regs;			/* controller registers */
-	struct aspeed_smc_chip *chips[0];	/* attached chips */
+	struct aspeed_smc_chip *chips[0];	/* pointers to attached chips */
 };
 
 #define CONTROL_SPI_AAF_MODE BIT(31)
@@ -217,7 +233,6 @@ struct aspeed_smc_controller {
 	CONTROL_SPI_IO_DUMMY_CYCLES_MASK | CONTROL_SPI_CLOCK_FREQ_SEL_MASK | \
 	CONTROL_SPI_LSB_FIRST | CONTROL_SPI_CLOCK_MODE_3)
 
-#define CONTROL_SPI_CLK_DIV4 BIT(13) /* BIOS */
 
 static u32 spi_control_fill_opcode(u8 opcode)
 {
@@ -331,15 +346,6 @@ static void aspeed_smc_write_user(struct spi_nor *nor, loff_t to, size_t len,
 	aspeed_smc_stop_user(nor);
 }
 
-static int aspeed_smc_erase(struct spi_nor *nor, loff_t offs)
-{
-	aspeed_smc_start_user(nor);
-	aspeed_smc_send_cmd_addr(nor, nor->erase_opcode, offs);
-	aspeed_smc_stop_user(nor);
-
-	return 0;
-}
-
 static int aspeed_smc_remove(struct platform_device *dev)
 {
 	struct aspeed_smc_chip *chip;
@@ -356,8 +362,9 @@ static int aspeed_smc_remove(struct platform_device *dev)
 }
 
 const struct of_device_id aspeed_smc_matches[] = {
-	{ .compatible = "aspeed,fmc", .data = &fmc_info },
-	{ .compatible = "aspeed,smc", .data = &smc_info },
+	{ .compatible = "aspeed,ast2500-fmc", .data = &fmc_info },
+	{ .compatible = "aspeed,ast2400-fmc", .data = &fmc_info },
+	{ .compatible = "aspeed,ast2400-smc", .data = &smc_info },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, aspeed_smc_matches);
@@ -385,14 +392,6 @@ static int aspeed_smc_probe(struct platform_device *dev)
 	int err = 0;
 	unsigned int n;
 
-	/*
-	 * This driver passes ioremap addresses to io port accessors.
-	 * This works on arm if the IO_SPACE_LIMIT does not truncate
-	 * the address.
-	 */
-	if (~(unsigned long)IO_SPACE_LIMIT)
-		return -ENODEV;
-
 	match = of_match_device(aspeed_smc_matches, &dev->dev);
 	if (!match || !match->data)
 		return -ENODEV;
@@ -411,33 +410,30 @@ static int aspeed_smc_probe(struct platform_device *dev)
 	controller->info = info;
 	mutex_init(&controller->mutex);
 
-	/* XXX turn off legacy mode if fmc ? */
-	/* XXX handshake to enable access to SMC (bios) controller w/ host? */
+	/* The pinmux or bootloader will disable legacy mode. */
+
+	/*
+	 * XXX Need to add arbitration to the SMC (BIOS) controller if access
+	 * is shared by the host.
+	 */
 
 	for_each_available_child_of_node(dev->dev.of_node, child) {
 		struct platform_device *cdev;
 		struct aspeed_smc_chip *chip;
 		u32 reg;
 
+		/* This version does not support nand or nor flash devices. */
 		if (!of_device_is_compatible(child, "jedec,spi-nor"))
-			continue;	/* XXX consider nand, nor children */
+			continue;
 
 
 		/*
-		 * create a platform device from the of node.
-		 * if the device already was created (eg from
-		 * a prior bind/unbind cycle) use it
+		 * create a platform device from the of node.  If the device
+		 * already was created (eg from a prior bind/unbind cycle)
+		 * reuse it.
 		 *
-		 * XXX The child name will become the default mtd
-		 * name in ioctl and /proc/mtd.  Should we default
-		 * to node->name (without unit)?  The name must be
-		 * unique among all platform devices.  (Name would
-		 * replace NULL in create call below).
-		 * ... Or we can just encourage the label attribute.
-		 *
-		 * The only reason to do the child here is to use it in
-		 * dev_err below for duplicate chip id.  We could use
-		 * the controller dev.
+		 * The creating the device node for the child here allows its
+		 * use for error reporting via dev_err below.
 		 */
 		cdev = of_platform_device_create_or_find(child, &dev->dev);
 		if (!cdev)
@@ -466,12 +462,16 @@ static int aspeed_smc_probe(struct platform_device *dev)
 		chip->controller = controller;
 		chip->ctl = controller->regs + info->ctl0 + n * 4;
 
-		/* dt said its spi.  xxx Set it in controller if has_type */
+		/*
+		 * The device tree said the chip is spi.
+		 * XXX Need to set it in controller if has_type says the
+		 * type is programmable.
+		 */
 		chip->type = smc_type_spi;
 
 		/*
-		 * Always turn on write enable bit in config register to
-		 * allow opcodes to be sent in user mode.
+		 * Always turn on the write enable bit in the config register
+		 * to allow opcodes to be sent in user mode.
 		 */
 		mutex_lock(&controller->mutex);
 		reg = readl(controller->regs + info->cfg);
@@ -480,22 +480,25 @@ static int aspeed_smc_probe(struct platform_device *dev)
 		writel(reg, controller->regs + info->cfg);
 		mutex_unlock(&controller->mutex);
 
-		/* XXX check resource within fmc CEx Segment Address Register */
-		/* XXX -- see dt vs jedec id vs bootloader */
-		/* XXX check / program clock phase/polarity,  only 0 or 3 */
-
 		/*
 		 * Read the existing control register to get basic values.
 		 *
-		 * XXX probably need more sanitation.
-		 * XXX do we trust the bootloader or the device tree?
+		 * XXX This register probably needs more sanitation.
+		 * XXX Do we trust the bootloader or the device tree?
 		 * spi-nor.c trusts jtag id over passed ids.
+		 *
+		 * Do we need support for mode 3 vs mode 0 clock phasing?
 		 */
 		reg = readl(chip->ctl);
 		chip->ctl_val[smc_base] = reg & CONTROL_SPI_KEEP_MASK;
 
+		/*
+		 * Retain the prior value of the control register as the
+		 * default if it was normal access mode.  Otherwise start
+		 * with the sanitized base value set to read mode.
+		 */
 		if ((reg & CONTROL_SPI_COMMAND_MODE_MASK) ==
-		    CONTROL_SPI_COMMAND_MODE_NORMAL)
+		     CONTROL_SPI_COMMAND_MODE_NORMAL)
 			chip->ctl_val[smc_read] = reg;
 		else
 			chip->ctl_val[smc_read] = chip->ctl_val[smc_base] |
@@ -505,15 +508,14 @@ static int aspeed_smc_probe(struct platform_device *dev)
 		chip->nor.priv = chip;
 		spi_nor_set_flash_node(&chip->nor, child);
 		chip->nor.mtd.name = of_get_property(child, "label", NULL);
-		chip->nor.erase = aspeed_smc_erase;
 		chip->nor.read = aspeed_smc_read_user;
 		chip->nor.write = aspeed_smc_write_user;
 		chip->nor.read_reg = aspeed_smc_read_reg;
 		chip->nor.write_reg = aspeed_smc_write_reg;
 
 		/*
-		 * XXX use of property and controller info width to choose
-		 * SPI_NOR_QUAD , SPI_NOR_DUAL
+		 * XXX Add support for SPI_NOR_QUAD and SPI_NOR_DUAL attach
+		 * when board support is present as determined by of property.
 		 */
 		err = spi_nor_scan(&chip->nor, NULL, SPI_NOR_NORMAL);
 		if (err)
@@ -523,9 +525,14 @@ static int aspeed_smc_probe(struct platform_device *dev)
 			spi_control_fill_opcode(chip->nor.program_opcode) |
 			CONTROL_SPI_COMMAND_MODE_WRITE;
 
-		/* XXX intrepret nor flags into controller settings */
-		/* XXX enable fast read here */
-		/* XXX check if resource size big enough for chip */
+		/*
+		 * XXX TODO
+		 * Enable fast read mode as required here.
+		 * Adjust clocks if fast read and write are supported.
+		 * Interpret spi-nor flags to adjust controller settings.
+		 * Check if resource size big enough for detected chip and
+		 * add support assisted (normal or fast-) read.
+		 */
 
 		err = mtd_device_register(&chip->nor.mtd, NULL, 0);
 		if (err)
@@ -533,7 +540,7 @@ static int aspeed_smc_probe(struct platform_device *dev)
 		controller->chips[n] = chip;
 	}
 
-	/* did we register any children? */
+	/* Were any children registered? */
 	for (n = 0; n < info->nce; n++)
 		if (controller->chips[n])
 			break;

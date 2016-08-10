@@ -1,3 +1,12 @@
+/*
+ * Copyright 2016 IBM Corporation
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
+ */
+
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/errno.h>
@@ -54,7 +63,7 @@
 struct bt_host {
 	struct device		dev;
 	struct miscdevice	miscdev;
-	void			*base;
+	void __iomem		*base;
 	int			open_count;
 	int			irq;
 	wait_queue_head_t	queue;
@@ -260,7 +269,7 @@ static void poll_timer(unsigned long data)
 	add_timer(&bt_host->poll_timer);
 }
 
-irqreturn_t bt_host_irq(int irq, void *arg)
+static irqreturn_t bt_host_irq(int irq, void *arg)
 {
 	struct bt_host *bt_host = arg;
 	uint32_t reg;
@@ -357,9 +366,8 @@ static int bt_host_probe(struct platform_device *pdev)
 		dev_info(dev, "Using IRQ %d\n", bt_host->irq);
 	} else {
 		dev_info(dev, "No IRQ; using timer\n");
-		init_timer(&bt_host->poll_timer);
-		bt_host->poll_timer.function = poll_timer;
-		bt_host->poll_timer.data = (unsigned long)bt_host;
+		setup_timer(&bt_host->poll_timer, poll_timer,
+				(unsigned long)bt_host);
 		bt_host->poll_timer.expires = jiffies + msecs_to_jiffies(10);
 		add_timer(&bt_host->poll_timer);
 	}
@@ -405,7 +413,6 @@ static const struct of_device_id bt_host_match[] = {
 static struct platform_driver bt_host_driver = {
 	.driver = {
 		.name		= DEVICE_NAME,
-		.owner		= THIS_MODULE,
 		.of_match_table = bt_host_match,
 	},
 	.probe = bt_host_probe,

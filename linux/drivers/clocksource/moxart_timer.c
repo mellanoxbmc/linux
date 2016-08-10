@@ -148,7 +148,7 @@ static irqreturn_t moxart_timer_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-static void __init moxart_timer_init(struct device_node *node)
+static int __init moxart_timer_init(struct device_node *node)
 {
 	int ret, irq;
 	unsigned long pclk;
@@ -157,19 +157,25 @@ static void __init moxart_timer_init(struct device_node *node)
 
 	timer = kzalloc(sizeof(*timer), GFP_KERNEL);
 	if (!timer)
-		panic("Can't allocate timer struct\n");
+		return -ENOMEM;
 
 	timer->base = of_iomap(node, 0);
-	if (!timer->base)
-		panic("%s: of_iomap failed\n", node->full_name);
+	if (!timer->base) {
+		pr_err("%s: of_iomap failed\n", node->full_name);
+		return -ENXIO;
+	}
 
 	irq = irq_of_parse_and_map(node, 0);
-	if (irq <= 0)
-		panic("%s: irq_of_parse_and_map failed\n", node->full_name);
+	if (irq <= 0) {
+		pr_err("%s: irq_of_parse_and_map failed\n", node->full_name);
+		return -EINVAL;
+	}
 
 	clk = of_clk_get(node, 0);
-	if (IS_ERR(clk))
-		panic("%s: of_clk_get failed\n", node->full_name);
+	if (IS_ERR(clk))  {
+		pr_err("%s: of_clk_get failed\n", node->full_name);
+		return PTR_ERR(clk);
+	}
 
 	pclk = clk_get_rate(clk);
 
@@ -200,14 +206,19 @@ static void __init moxart_timer_init(struct device_node *node)
 	timer->act.handler = moxart_timer_interrupt;
 	timer->act.dev_id = &timer->clkevt;
 
-	if (clocksource_mmio_init(timer->base + TIMER2_BASE + REG_COUNT,
-				  "moxart_timer", pclk, 200, 32,
-				  clocksource_mmio_readl_down))
-		panic("%s: clocksource_mmio_init failed\n", node->full_name);
+	ret = clocksource_mmio_init(timer->base + TIMER2_BASE + REG_COUNT,
+				    "moxart_timer", pclk, 200, 32,
+				    clocksource_mmio_readl_down);
+	if (ret) {
+		pr_err("%s: clocksource_mmio_init failed\n", node->full_name);
+		return ret;
+	}
 
 	ret = setup_irq(irq, &timer->act);
-	if (ret)
-		panic("%s: setup_irq failed\n", node->full_name);
+	if (ret) {
+		pr_err("%s: setup_irq failed\n", node->full_name);
+		return ret;
+	}
 
 	/* Clear match registers */
 	writel(0, timer->base + TIMER1_BASE + REG_MATCH1);
@@ -230,6 +241,8 @@ static void __init moxart_timer_init(struct device_node *node)
 	 * register size is u32
 	 */
 	clockevents_config_and_register(&timer->clkevt, pclk, 0x4, 0xfffffffe);
+
+	return 0;
 }
-CLOCKSOURCE_OF_DECLARE(moxart, "moxa,moxart-timer", moxart_timer_init);
-CLOCKSOURCE_OF_DECLARE(aspeed, "aspeed,ast2400-timer", moxart_timer_init);
+CLOCKSOURCE_OF_DECLARE_RET(moxart, "moxa,moxart-timer", moxart_timer_init);
+CLOCKSOURCE_OF_DECLARE_RET(aspeed, "aspeed,ast2400-timer", moxart_timer_init);

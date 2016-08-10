@@ -1,5 +1,5 @@
 /*
- * Copyright Gavin Shan, IBM Corporation 2015.
+ * Copyright Gavin Shan, IBM Corporation 2016.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,152 +17,228 @@
 #include <net/ncsi.h>
 #include <net/net_namespace.h>
 #include <net/sock.h>
+#include <net/addrconf.h>
+#include <net/ipv6.h>
+#include <net/if_inet6.h>
 
-#include "ncsi-pkt.h"
 #include "internal.h"
+#include "ncsi-pkt.h"
 
 LIST_HEAD(ncsi_dev_list);
 DEFINE_SPINLOCK(ncsi_dev_lock);
 
-int ncsi_find_channel_filter(struct ncsi_channel *nc, int table, void *data)
+static inline int ncsi_filter_size(int table)
+{
+	int sizes[] = { 2, 6, 6, 6 };
+
+	BUILD_BUG_ON(ARRAY_SIZE(sizes) != NCSI_FILTER_MAX);
+	if (table < NCSI_FILTER_BASE || table >= NCSI_FILTER_MAX)
+		return -EINVAL;
+
+	return sizes[table];
+}
+
+int ncsi_find_filter(struct ncsi_channel *nc, int table, void *data)
 {
 	struct ncsi_channel_filter *ncf;
-	int idx, entry_size;
 	void *bitmap;
+	int index, size;
+	unsigned long flags;
 
-	switch (table) {
-	case NCSI_FILTER_VLAN:
-		entry_size = 2;
-		break;
-	case NCSI_FILTER_UC:
-	case NCSI_FILTER_MC:
-	case NCSI_FILTER_MIXED:
-		entry_size = 6;
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	/* Check if the filter table has been initialized */
-	ncf = nc->nc_filters[table];
+	ncf = nc->filters[table];
 	if (!ncf)
-		return -ENODEV;
+		return -ENXIO;
 
-	/* Check the valid entries one by one */
-	bitmap = (void *)&ncf->ncf_bitmap;
-	idx = -1;
-	while ((idx = find_next_bit(bitmap, ncf->ncf_total, idx+1))
-		< ncf->ncf_total) {
-		if (!memcmp(ncf->ncf_data + entry_size * idx, data, entry_size))
-			return idx;
+	size = ncsi_filter_size(table);
+	if (size < 0)
+		return size;
+
+	spin_lock_irqsave(&nc->lock, flags);
+	bitmap = (void *)&ncf->bitmap;
+	index = -1;
+	while ((index = find_next_bit(bitmap, ncf->total, index + 1))
+	       < ncf->total) {
+		if (!memcmp(ncf->data + size * index, data, size)) {
+			spin_unlock_irqrestore(&nc->lock, flags);
+			return index;
+		}
 	}
+	spin_unlock_irqrestore(&nc->lock, flags);
 
 	return -ENOENT;
 }
 
-int ncsi_add_channel_filter(struct ncsi_channel *nc, int table, void *data)
+int ncsi_add_filter(struct ncsi_channel *nc, int table, void *data)
 {
 	struct ncsi_channel_filter *ncf;
-	int idx, entry_size;
+	int index, size;
 	void *bitmap;
+	unsigned long flags;
 
-	/* Needn't add it if it's already existing */
-	idx = ncsi_find_channel_filter(nc, table, data);
-	if (idx >= 0)
-		return idx;
+	size = ncsi_filter_size(table);
+	if (size < 0)
+		return size;
 
-	switch (table) {
-	case NCSI_FILTER_VLAN:
-		entry_size = 2;
-		break;
-	case NCSI_FILTER_UC:
-	case NCSI_FILTER_MC:
-	case NCSI_FILTER_MIXED:
-		entry_size = 6;
-		break;
-	default:
-		return -EINVAL;
-	}
+	index = ncsi_find_filter(nc, table, data);
+	if (index >= 0)
+		return index;
 
-	/* Check if the filter table has been initialized */
-	ncf = nc->nc_filters[table];
+	ncf = nc->filters[table];
 	if (!ncf)
 		return -ENODEV;
 
-	/* Propagate the filter */
-	bitmap = (void *)&ncf->ncf_bitmap;
+	spin_lock_irqsave(&nc->lock, flags);
+	bitmap = (void *)&ncf->bitmap;
 	do {
-		idx = find_next_zero_bit(bitmap, ncf->ncf_total, 0);
-		if (idx >= ncf->ncf_total)
+		index = find_next_zero_bit(bitmap, ncf->total, 0);
+		if (index >= ncf->total) {
+			spin_unlock_irqrestore(&nc->lock, flags);
 			return -ENOSPC;
-	} while (test_and_set_bit(idx, bitmap));
+		}
+	} while (test_and_set_bit(index, bitmap));
 
-	memcpy(ncf->ncf_data + entry_size * idx, data, entry_size);
-	return idx;
+	memcpy(ncf->data + size * index, data, size);
+	spin_unlock_irqrestore(&nc->lock, flags);
+
+	return index;
 }
 
-int ncsi_del_channel_filter(struct ncsi_channel *nc, int table, int index)
+int ncsi_remove_filter(struct ncsi_channel *nc, int table, int index)
 {
 	struct ncsi_channel_filter *ncf;
-	int entry_size;
+	int size;
 	void *bitmap;
+	unsigned long flags;
 
-	switch (table) {
-	case NCSI_FILTER_VLAN:
-		entry_size = 2;
-		break;
-	case NCSI_FILTER_UC:
-	case NCSI_FILTER_MC:
-	case NCSI_FILTER_MIXED:
-		entry_size = 6;
-		break;
-	default:
-		return -EINVAL;
-	}
+	size = ncsi_filter_size(table);
+	if (size < 0)
+		return size;
 
-	/* Check if the filter table has been initialized */
-	ncf = nc->nc_filters[table];
-	if (!ncf || index >= ncf->ncf_total)
+	ncf = nc->filters[table];
+	if (!ncf || index >= ncf->total)
 		return -ENODEV;
 
-	/* Check if the entry is valid */
-	bitmap = (void *)&ncf->ncf_bitmap;
+	spin_lock_irqsave(&nc->lock, flags);
+	bitmap = (void *)&ncf->bitmap;
 	if (test_and_clear_bit(index, bitmap))
-		memset(ncf->ncf_data + entry_size * index, 0, entry_size);
+		memset(ncf->data + size * index, 0, size);
+	spin_unlock_irqrestore(&nc->lock, flags);
 
 	return 0;
 }
 
-struct ncsi_channel *ncsi_add_channel(struct ncsi_package *np, unsigned char id)
+static void ncsi_report_link(struct ncsi_dev_priv *ndp, bool force_down)
 {
-	struct ncsi_channel *nc, *tmp;
-	int index;
+	struct ncsi_dev *nd = &ndp->ndev;
+	struct ncsi_package *np;
+	struct ncsi_channel *nc;
 
-	nc = kzalloc(sizeof(*nc), GFP_ATOMIC);
-	if (!nc) {
-		pr_warn("%s: Out of memory !\n", __func__);
-		return NULL;
+	nd->state = ncsi_dev_state_functional;
+	if (force_down) {
+		nd->link_up = 0;
+		goto report;
 	}
 
-	nc->nc_package = np;
-	nc->nc_id = id;
-	for (index = 0; index < NCSI_CAP_MAX; index++)
-		nc->nc_caps[index].ncc_index = index;
-	for (index = 0; index < NCSI_MODE_MAX; index++)
-		nc->nc_modes[index].ncm_index = index;
+	nd->link_up = 0;
+	NCSI_FOR_EACH_PACKAGE(ndp, np) {
+		NCSI_FOR_EACH_CHANNEL(np, nc) {
+			if (!list_empty(&nc->link) ||
+			    nc->state != NCSI_CHANNEL_ACTIVE)
+				continue;
 
-	spin_lock(&np->np_channel_lock);
-	tmp = ncsi_find_channel(np, id);
-	if (tmp) {
-		spin_unlock(&np->np_channel_lock);
-		kfree(nc);
-		return tmp;
+			if (nc->modes[NCSI_MODE_LINK].data[2] & 0x1) {
+				nd->link_up = 1;
+				goto report;
+			}
+		}
 	}
-	list_add_tail_rcu(&nc->nc_node, &np->np_channels);
-	spin_unlock(&np->np_channel_lock);
 
-	atomic_inc(&np->np_channel_num);
-	return nc;
+report:
+	nd->handler(nd);
+}
+
+static void ncsi_channel_monitor(unsigned long data)
+{
+	struct ncsi_channel *nc = (struct ncsi_channel *)data;
+	struct ncsi_package *np = nc->package;
+	struct ncsi_dev_priv *ndp = np->ndp;
+	struct ncsi_cmd_arg nca;
+	bool enabled;
+	unsigned int timeout;
+	unsigned long flags;
+	int ret;
+
+	spin_lock_irqsave(&nc->lock, flags);
+	timeout = nc->timeout;
+	enabled = nc->enabled;
+	spin_unlock_irqrestore(&nc->lock, flags);
+
+	if (!enabled || !list_empty(&nc->link))
+		return;
+	if (nc->state != NCSI_CHANNEL_INACTIVE &&
+	    nc->state != NCSI_CHANNEL_ACTIVE)
+		return;
+
+	if (!(timeout % 2)) {
+		nca.ndp = ndp;
+		nca.package = np->id;
+		nca.channel = nc->id;
+		nca.type = NCSI_PKT_CMD_GLS;
+		nca.driven = false;
+		ret = ncsi_xmit_cmd(&nca);
+		if (ret) {
+			netdev_err(ndp->ndev.dev, "Error %d sending GLS\n",
+				   ret);
+			return;
+		}
+	}
+
+	if (timeout + 1 >= 3) {
+		if (!(ndp->flags & NCSI_DEV_HWA) &&
+		    nc->state == NCSI_CHANNEL_ACTIVE)
+			ncsi_report_link(ndp, true);
+
+		spin_lock_irqsave(&ndp->lock, flags);
+		xchg(&nc->state, NCSI_CHANNEL_INACTIVE);
+		list_add_tail_rcu(&nc->link, &ndp->channel_queue);
+		spin_unlock_irqrestore(&ndp->lock, flags);
+		ncsi_process_next_channel(ndp);
+		return;
+	}
+
+	spin_lock_irqsave(&nc->lock, flags);
+	nc->timeout = timeout + 1;
+	nc->enabled = true;
+	spin_unlock_irqrestore(&nc->lock, flags);
+	mod_timer(&nc->timer, jiffies + HZ * (1 << (nc->timeout / 2)));
+}
+
+void ncsi_start_channel_monitor(struct ncsi_channel *nc)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&nc->lock, flags);
+	WARN_ON_ONCE(nc->enabled);
+	nc->timeout = 0;
+	nc->enabled = true;
+	spin_unlock_irqrestore(&nc->lock, flags);
+
+	mod_timer(&nc->timer, jiffies + HZ * (1 << (nc->timeout / 2)));
+}
+
+void ncsi_stop_channel_monitor(struct ncsi_channel *nc)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&nc->lock, flags);
+	if (!nc->enabled) {
+		spin_unlock_irqrestore(&nc->lock, flags);
+		return;
+	}
+	nc->enabled = false;
+	spin_unlock_irqrestore(&nc->lock, flags);
+
+	del_timer_sync(&nc->timer);
 }
 
 struct ncsi_channel *ncsi_find_channel(struct ncsi_package *np,
@@ -171,70 +247,79 @@ struct ncsi_channel *ncsi_find_channel(struct ncsi_package *np,
 	struct ncsi_channel *nc;
 
 	NCSI_FOR_EACH_CHANNEL(np, nc) {
-		if (nc->nc_id == id)
+		if (nc->id == id)
 			return nc;
 	}
 
 	return NULL;
 }
 
-static void ncsi_release_channel(struct ncsi_channel *nc)
+struct ncsi_channel *ncsi_add_channel(struct ncsi_package *np, unsigned char id)
 {
-	struct ncsi_dev_priv *ndp = nc->nc_package->np_ndp;
-	struct ncsi_package *np = nc->nc_package;
+	struct ncsi_channel *nc, *tmp;
+	int index;
+	unsigned long flags;
+
+	nc = kzalloc(sizeof(*nc), GFP_ATOMIC);
+	if (!nc)
+		return NULL;
+
+	nc->id = id;
+	nc->package = np;
+	nc->state = NCSI_CHANNEL_INACTIVE;
+	nc->enabled = false;
+	setup_timer(&nc->timer, ncsi_channel_monitor, (unsigned long)nc);
+	spin_lock_init(&nc->lock);
+	INIT_LIST_HEAD(&nc->link);
+	for (index = 0; index < NCSI_CAP_MAX; index++)
+		nc->caps[index].index = index;
+	for (index = 0; index < NCSI_MODE_MAX; index++)
+		nc->modes[index].index = index;
+
+	spin_lock_irqsave(&np->lock, flags);
+	tmp = ncsi_find_channel(np, id);
+	if (tmp) {
+		spin_unlock_irqrestore(&np->lock, flags);
+		kfree(nc);
+		return tmp;
+	}
+
+	list_add_tail_rcu(&nc->node, &np->channels);
+	np->channel_num++;
+	spin_unlock_irqrestore(&np->lock, flags);
+
+	return nc;
+}
+
+static void ncsi_remove_channel(struct ncsi_channel *nc)
+{
+	struct ncsi_package *np = nc->package;
 	struct ncsi_channel_filter *ncf;
+	unsigned long flags;
 	int i;
 
 	/* Release filters */
+	spin_lock_irqsave(&nc->lock, flags);
 	for (i = 0; i < NCSI_FILTER_MAX; i++) {
-		ncf = nc->nc_filters[i];
+		ncf = nc->filters[i];
 		if (!ncf)
 			continue;
 
-		nc->nc_filters[i] = NULL;
+		nc->filters[i] = NULL;
 		kfree(ncf);
 	}
 
-	/* Update active channel if necessary */
-	if (ndp->ndp_active_channel == nc) {
-		ndp->ndp_active_package = NULL;
-		ndp->ndp_active_channel = NULL;
-	}
+	nc->state = NCSI_CHANNEL_INACTIVE;
+	spin_unlock_irqrestore(&nc->lock, flags);
+	ncsi_stop_channel_monitor(nc);
 
 	/* Remove and free channel */
-	list_del_rcu(&nc->nc_node);
+	spin_lock_irqsave(&np->lock, flags);
+	list_del_rcu(&nc->node);
+	np->channel_num--;
+	spin_unlock_irqrestore(&np->lock, flags);
+
 	kfree(nc);
-	BUG_ON(atomic_dec_return(&np->np_channel_num) < 0);
-}
-
-struct ncsi_package *ncsi_add_package(struct ncsi_dev_priv *ndp,
-				      unsigned char id)
-{
-	struct ncsi_package *np, *tmp;
-
-	np = kzalloc(sizeof(*np), GFP_ATOMIC);
-	if (!np) {
-		pr_warn("%s: Out of memory !\n", __func__);
-		return NULL;
-	}
-
-	np->np_id = id;
-	np->np_ndp = ndp;
-	spin_lock_init(&np->np_channel_lock);
-	INIT_LIST_HEAD(&np->np_channels);
-
-	spin_lock(&ndp->ndp_package_lock);
-	tmp = ncsi_find_package(ndp, id);
-	if (tmp) {
-		spin_unlock(&ndp->ndp_package_lock);
-		kfree(np);
-		return tmp;
-	}
-	list_add_tail_rcu(&np->np_node, &ndp->ndp_packages);
-	spin_unlock(&ndp->ndp_package_lock);
-
-	atomic_inc(&ndp->ndp_package_num);
-	return np;
 }
 
 struct ncsi_package *ncsi_find_package(struct ncsi_dev_priv *ndp,
@@ -243,36 +328,60 @@ struct ncsi_package *ncsi_find_package(struct ncsi_dev_priv *ndp,
 	struct ncsi_package *np;
 
 	NCSI_FOR_EACH_PACKAGE(ndp, np) {
-		if (np->np_id == id)
+		if (np->id == id)
 			return np;
 	}
 
 	return NULL;
 }
 
-void ncsi_release_package(struct ncsi_package *np)
+struct ncsi_package *ncsi_add_package(struct ncsi_dev_priv *ndp,
+				      unsigned char id)
 {
-	struct ncsi_dev_priv *ndp = np->np_ndp;
-	struct ncsi_channel *nc, *tmp;
+	struct ncsi_package *np, *tmp;
+	unsigned long flags;
 
-	/* Release all child channels */
-	spin_lock(&np->np_channel_lock);
-	list_for_each_entry_safe(nc, tmp, &np->np_channels, nc_node)
-		ncsi_release_channel(nc);
-	spin_unlock(&np->np_channel_lock);
+	np = kzalloc(sizeof(*np), GFP_ATOMIC);
+	if (!np)
+		return NULL;
 
-	/* Clear active package if necessary */
-	if (ndp->ndp_active_package == np) {
-		ndp->ndp_active_package = NULL;
-		ndp->ndp_active_channel = NULL;
+	np->id = id;
+	np->ndp = ndp;
+	spin_lock_init(&np->lock);
+	INIT_LIST_HEAD(&np->channels);
+
+	spin_lock_irqsave(&ndp->lock, flags);
+	tmp = ncsi_find_package(ndp, id);
+	if (tmp) {
+		spin_unlock_irqrestore(&ndp->lock, flags);
+		kfree(np);
+		return tmp;
 	}
 
-	/* Remove and free package */
-	list_del_rcu(&np->np_node);
-	kfree(np);
+	list_add_tail_rcu(&np->node, &ndp->packages);
+	ndp->package_num++;
+	spin_unlock_irqrestore(&ndp->lock, flags);
 
-	/* Decrease number of packages */
-	BUG_ON(atomic_dec_return(&ndp->ndp_package_num) < 0);
+	return np;
+}
+
+void ncsi_remove_package(struct ncsi_package *np)
+{
+	struct ncsi_dev_priv *ndp = np->ndp;
+	struct ncsi_channel *nc, *tmp;
+	unsigned long flags;
+
+	/* Release all child channels */
+	list_for_each_entry_safe(nc, tmp, &np->channels, node)
+		ncsi_remove_channel(nc);
+
+	/* Remove and free package */
+	spin_lock_irqsave(&ndp->lock, flags);
+	list_del_rcu(&np->node);
+	ndp->package_num--;
+	spin_unlock_irqrestore(&ndp->lock, flags);
+
+	kfree(np);
 }
 
 void ncsi_find_package_and_channel(struct ncsi_dev_priv *ndp,
@@ -292,69 +401,69 @@ void ncsi_find_package_and_channel(struct ncsi_dev_priv *ndp,
 		*nc = c;
 }
 
-/*
- * For two consective NCSI commands, the packet IDs shouldn't be
- * same. Otherwise, the bogus response might be replied. So the
- * available IDs are allocated in round-robin fasion.
+/* For two consecutive NCSI commands, the packet IDs shouldn't
+ * be same. Otherwise, the bogus response might be replied. So
+ * the available IDs are allocated in round-robin fashion.
  */
-struct ncsi_req *ncsi_alloc_req(struct ncsi_dev_priv *ndp)
+struct ncsi_request *ncsi_alloc_request(struct ncsi_dev_priv *ndp, bool driven)
 {
-	struct ncsi_req *nr = NULL;
-	int idx, limit = 256;
+	struct ncsi_request *nr = NULL;
+	int i, limit = ARRAY_SIZE(ndp->requests);
 	unsigned long flags;
 
-	spin_lock_irqsave(&ndp->ndp_req_lock, flags);
-
 	/* Check if there is one available request until the ceiling */
-	for (idx = atomic_read(&ndp->ndp_last_req_idx);
-	     !nr && idx < limit; idx++) {
-		if (ndp->ndp_reqs[idx].nr_used)
+	spin_lock_irqsave(&ndp->lock, flags);
+	for (i = ndp->request_id; !nr && i < limit; i++) {
+		if (ndp->requests[i].used)
 			continue;
 
-		ndp->ndp_reqs[idx].nr_used = true;
-		nr = &ndp->ndp_reqs[idx];
-		atomic_inc(&ndp->ndp_last_req_idx);
-		if (atomic_read(&ndp->ndp_last_req_idx) >= limit)
-			atomic_set(&ndp->ndp_last_req_idx, 0);
+		nr = &ndp->requests[i];
+		nr->used = true;
+		nr->driven = driven;
+		if (++ndp->request_id >= limit)
+			ndp->request_id = 0;
 	}
 
 	/* Fail back to check from the starting cursor */
-	for (idx = 0; !nr && idx < atomic_read(&ndp->ndp_last_req_idx); idx++) {
-		if (ndp->ndp_reqs[idx].nr_used)
+	for (i = 0; !nr && i < ndp->request_id; i++) {
+		if (ndp->requests[i].used)
 			continue;
 
-		ndp->ndp_reqs[idx].nr_used = true;
-		nr = &ndp->ndp_reqs[idx];
-		atomic_inc(&ndp->ndp_last_req_idx);
-		if (atomic_read(&ndp->ndp_last_req_idx) >= limit)
-			atomic_set(&ndp->ndp_last_req_idx, 0);
+		nr = &ndp->requests[i];
+		nr->used = true;
+		nr->driven = driven;
+		if (++ndp->request_id >= limit)
+			ndp->request_id = 0;
 	}
+	spin_unlock_irqrestore(&ndp->lock, flags);
 
-	spin_unlock_irqrestore(&ndp->ndp_req_lock, flags);
 	return nr;
 }
 
-void ncsi_free_req(struct ncsi_req *nr, bool check, bool timeout)
+void ncsi_free_request(struct ncsi_request *nr)
 {
-	struct ncsi_dev_priv *ndp = nr->nr_ndp;
+	struct ncsi_dev_priv *ndp = nr->ndp;
 	struct sk_buff *cmd, *rsp;
 	unsigned long flags;
+	bool driven;
 
-	if (nr->nr_timer_enabled) {
-		nr->nr_timer_enabled = false;
-		del_timer_sync(&nr->nr_timer);
+	if (nr->enabled) {
+		nr->enabled = false;
+		del_timer_sync(&nr->timer);
 	}
 
-	spin_lock_irqsave(&ndp->ndp_req_lock, flags);
-	cmd = nr->nr_cmd;
-	rsp = nr->nr_rsp;
-	nr->nr_cmd = NULL;
-	nr->nr_rsp = NULL;
-	nr->nr_used = false;
-	spin_unlock_irqrestore(&ndp->ndp_req_lock, flags);
+	spin_lock_irqsave(&ndp->lock, flags);
+	cmd = nr->cmd;
+	rsp = nr->rsp;
+	nr->cmd = NULL;
+	nr->rsp = NULL;
+	nr->used = false;
+	driven = nr->driven;
+	spin_unlock_irqrestore(&ndp->lock, flags);
 
-	if (check && cmd && atomic_dec_return(&ndp->ndp_pending_reqs) == 0)
-		schedule_work(&ndp->ndp_work);
+	if (driven && cmd && --ndp->pending_req_num == 0)
+		schedule_work(&ndp->work);
+
 	/* Release command and response */
 	consume_skb(cmd);
 	consume_skb(rsp);
@@ -365,225 +474,386 @@ struct ncsi_dev *ncsi_find_dev(struct net_device *dev)
 	struct ncsi_dev_priv *ndp;
 
 	NCSI_FOR_EACH_DEV(ndp) {
-		if (ndp->ndp_ndev.nd_dev == dev)
-			return &ndp->ndp_ndev;
+		if (ndp->ndev.dev == dev)
+			return &ndp->ndev;
 	}
 
 	return NULL;
 }
 
-static void ncsi_dev_config(struct ncsi_dev_priv *ndp)
+static void ncsi_request_timeout(unsigned long data)
 {
-	struct ncsi_dev *nd = &ndp->ndp_ndev;
-	struct net_device *dev = nd->nd_dev;
-	struct ncsi_package *np = ndp->ndp_active_package;
-	struct ncsi_channel *nc = ndp->ndp_active_channel;
+	struct ncsi_request *nr = (struct ncsi_request *)data;
+	struct ncsi_dev_priv *ndp = nr->ndp;
+	unsigned long flags;
+
+	/* If the request already had associated response,
+	 * let the response handler to release it.
+	 */
+	spin_lock_irqsave(&ndp->lock, flags);
+	nr->enabled = false;
+	if (nr->rsp || !nr->cmd) {
+		spin_unlock_irqrestore(&ndp->lock, flags);
+		return;
+	}
+	spin_unlock_irqrestore(&ndp->lock, flags);
+
+	/* Release the request */
+	ncsi_free_request(nr);
+}
+
+static void ncsi_suspend_channel(struct ncsi_dev_priv *ndp)
+{
+	struct ncsi_dev *nd = &ndp->ndev;
+	struct ncsi_package *np = ndp->active_package;
+	struct ncsi_channel *nc = ndp->active_channel;
+	struct ncsi_cmd_arg nca;
+	int ret;
+
+	nca.ndp = ndp;
+	nca.driven = true;
+	switch (nd->state) {
+	case ncsi_dev_state_suspend:
+		nd->state = ncsi_dev_state_suspend_select;
+		/* Fall through */
+	case ncsi_dev_state_suspend_select:
+	case ncsi_dev_state_suspend_dcnt:
+	case ncsi_dev_state_suspend_dc:
+	case ncsi_dev_state_suspend_deselect:
+		ndp->pending_req_num = 1;
+
+		np = ndp->active_package;
+		nc = ndp->active_channel;
+		nca.package = np->id;
+		if (nd->state == ncsi_dev_state_suspend_select) {
+			nca.type = NCSI_PKT_CMD_SP;
+			nca.channel = 0x1f;
+			if (ndp->flags & NCSI_DEV_HWA)
+				nca.bytes[0] = 0;
+			else
+				nca.bytes[0] = 1;
+			nd->state = ncsi_dev_state_suspend_dcnt;
+		} else if (nd->state == ncsi_dev_state_suspend_dcnt) {
+			nca.type = NCSI_PKT_CMD_DCNT;
+			nca.channel = nc->id;
+			nd->state = ncsi_dev_state_suspend_dc;
+		} else if (nd->state == ncsi_dev_state_suspend_dc) {
+			nca.type = NCSI_PKT_CMD_DC;
+			nca.channel = nc->id;
+			nca.bytes[0] = 1;
+			nd->state = ncsi_dev_state_suspend_deselect;
+		} else if (nd->state == ncsi_dev_state_suspend_deselect) {
+			nca.type = NCSI_PKT_CMD_DP;
+			nca.channel = 0x1f;
+			nd->state = ncsi_dev_state_suspend_done;
+		}
+
+		ret = ncsi_xmit_cmd(&nca);
+		if (ret) {
+			nd->state = ncsi_dev_state_functional;
+			return;
+		}
+
+		break;
+	case ncsi_dev_state_suspend_done:
+		xchg(&nc->state, NCSI_CHANNEL_INACTIVE);
+		ncsi_process_next_channel(ndp);
+
+		break;
+	default:
+		netdev_warn(nd->dev, "Wrong NCSI state 0x%x in suspend\n",
+			    nd->state);
+	}
+}
+
+static void ncsi_configure_channel(struct ncsi_dev_priv *ndp)
+{
+	struct ncsi_dev *nd = &ndp->ndev;
+	struct net_device *dev = nd->dev;
+	struct ncsi_package *np = ndp->active_package;
+	struct ncsi_channel *nc = ndp->active_channel;
 	struct ncsi_cmd_arg nca;
 	unsigned char index;
 	int ret;
 
-	nca.nca_ndp = ndp;
-
-	/* When we're reconfiguring the active channel, the active package
-	 * should be selected and the old setting on the active channel
-	 * should be cleared.
-	 */
-	switch (nd->nd_state) {
+	nca.ndp = ndp;
+	nca.driven = true;
+	switch (nd->state) {
 	case ncsi_dev_state_config:
 	case ncsi_dev_state_config_sp:
-		atomic_set(&ndp->ndp_pending_reqs, 1);
+		ndp->pending_req_num = 1;
 
 		/* Select the specific package */
-		nca.nca_type = NCSI_PKT_CMD_SP;
-		nca.nca_bytes[0] = 1;
-		nca.nca_package = np->np_id;
-		nca.nca_channel = 0x1f;
+		nca.type = NCSI_PKT_CMD_SP;
+		if (ndp->flags & NCSI_DEV_HWA)
+			nca.bytes[0] = 0;
+		else
+			nca.bytes[0] = 1;
+		nca.package = np->id;
+		nca.channel = 0x1f;
 		ret = ncsi_xmit_cmd(&nca);
 		if (ret)
 			goto error;
 
-		nd->nd_state = ncsi_dev_state_config_cis;
+		nd->state = ncsi_dev_state_config_cis;
 		break;
 	case ncsi_dev_state_config_cis:
-		atomic_set(&ndp->ndp_pending_reqs, 1);
+		ndp->pending_req_num = 1;
 
 		/* Clear initial state */
-		nca.nca_type = NCSI_PKT_CMD_CIS;
-		nca.nca_package = np->np_id;
-		nca.nca_channel = nc->nc_id;
+		nca.type = NCSI_PKT_CMD_CIS;
+		nca.package = np->id;
+		nca.channel = nc->id;
 		ret = ncsi_xmit_cmd(&nca);
 		if (ret)
 			goto error;
 
-		nd->nd_state = ncsi_dev_state_config_sma;
+		nd->state = ncsi_dev_state_config_sma;
 		break;
 	case ncsi_dev_state_config_sma:
 	case ncsi_dev_state_config_ebf:
+#if IS_ENABLED(CONFIG_IPV6)
+	case ncsi_dev_state_config_egmf:
+#endif
 	case ncsi_dev_state_config_ecnt:
 	case ncsi_dev_state_config_ec:
 	case ncsi_dev_state_config_ae:
 	case ncsi_dev_state_config_gls:
-		atomic_set(&ndp->ndp_pending_reqs, 1);
+		ndp->pending_req_num = 1;
 
-		nca.nca_package = np->np_id;
-		nca.nca_channel = nc->nc_id;
+		nca.package = np->id;
+		nca.channel = nc->id;
 
 		/* Use first entry in unicast filter table. Note that
 		 * the MAC filter table starts from entry 1 instead of
 		 * 0.
 		 */
-		if (nd->nd_state == ncsi_dev_state_config_sma) {
-			nca.nca_type = NCSI_PKT_CMD_SMA;
+		if (nd->state == ncsi_dev_state_config_sma) {
+			nca.type = NCSI_PKT_CMD_SMA;
 			for (index = 0; index < 6; index++)
-				nca.nca_bytes[index] = dev->dev_addr[index];
-			nca.nca_bytes[6] = 0x1;
-			nca.nca_bytes[7] = 0x1;
-			nd->nd_state = ncsi_dev_state_config_ebf;
-		} else if (nd->nd_state == ncsi_dev_state_config_ebf) {
-			nca.nca_type = NCSI_PKT_CMD_EBF;
-			nca.nca_dwords[0] = nc->nc_caps[NCSI_CAP_BC].ncc_cap;
-			nd->nd_state = ncsi_dev_state_config_ecnt;
-		} else if (nd->nd_state == ncsi_dev_state_config_ecnt) {
-			nca.nca_type = NCSI_PKT_CMD_ECNT;
-			nd->nd_state = ncsi_dev_state_config_ec;
-		} else if (nd->nd_state == ncsi_dev_state_config_ec) {
-			nca.nca_type = NCSI_PKT_CMD_EC;
-			nd->nd_state = ncsi_dev_state_config_ae;
-		} else if (nd->nd_state == ncsi_dev_state_config_ae) {
-			nca.nca_type = NCSI_PKT_CMD_AE;
-			nca.nca_bytes[0] = 0;
-			nca.nca_dwords[1] = 0x7;
-			nd->nd_state = ncsi_dev_state_config_gls;
-		} else if (nd->nd_state == ncsi_dev_state_config_gls) {
-			nca.nca_type = NCSI_PKT_CMD_GLS;
-			nd->nd_state = ncsi_dev_state_config_done;
+				nca.bytes[index] = dev->dev_addr[index];
+			nca.bytes[6] = 0x1;
+			nca.bytes[7] = 0x1;
+			nd->state = ncsi_dev_state_config_ebf;
+		} else if (nd->state == ncsi_dev_state_config_ebf) {
+			nca.type = NCSI_PKT_CMD_EBF;
+			nca.dwords[0] = nc->caps[NCSI_CAP_BC].cap;
+			nd->state = ncsi_dev_state_config_ecnt;
+#if IS_ENABLED(CONFIG_IPV6)
+			if (ndp->inet6_addr_num > 0 &&
+			    (nc->caps[NCSI_CAP_GENERIC].cap &
+			     NCSI_CAP_GENERIC_MC))
+				nd->state = ncsi_dev_state_config_egmf;
+			else
+				nd->state = ncsi_dev_state_config_ecnt;
+		} else if (nd->state == ncsi_dev_state_config_egmf) {
+			nca.type = NCSI_PKT_CMD_EGMF;
+			nca.dwords[0] = nc->caps[NCSI_CAP_MC].cap;
+			nd->state = ncsi_dev_state_config_ecnt;
+#endif /* CONFIG_IPV6 */
+		} else if (nd->state == ncsi_dev_state_config_ecnt) {
+			nca.type = NCSI_PKT_CMD_ECNT;
+			nd->state = ncsi_dev_state_config_ec;
+		} else if (nd->state == ncsi_dev_state_config_ec) {
+			/* Enable AEN if it's supported */
+			nca.type = NCSI_PKT_CMD_EC;
+			nd->state = ncsi_dev_state_config_ae;
+			if (!(nc->caps[NCSI_CAP_AEN].cap & NCSI_CAP_AEN_MASK))
+				nd->state = ncsi_dev_state_config_gls;
+		} else if (nd->state == ncsi_dev_state_config_ae) {
+			nca.type = NCSI_PKT_CMD_AE;
+			nca.bytes[0] = 0;
+			nca.dwords[1] = nc->caps[NCSI_CAP_AEN].cap;
+			nd->state = ncsi_dev_state_config_gls;
+		} else if (nd->state == ncsi_dev_state_config_gls) {
+			nca.type = NCSI_PKT_CMD_GLS;
+			nd->state = ncsi_dev_state_config_done;
 		}
 
 		ret = ncsi_xmit_cmd(&nca);
 		if (ret)
 			goto error;
-
 		break;
 	case ncsi_dev_state_config_done:
-		nd->nd_state = ncsi_dev_state_functional;
-		nd->nd_link_up = 0;
-		if (nc->nc_modes[NCSI_MODE_LINK].ncm_data[2] & 0x1)
-			nd->nd_link_up = 1;
+		if (nc->modes[NCSI_MODE_LINK].data[2] & 0x1)
+			xchg(&nc->state, NCSI_CHANNEL_ACTIVE);
+		else
+			xchg(&nc->state, NCSI_CHANNEL_INACTIVE);
 
-		nd->nd_handler(nd);
-		ndp->ndp_flags &= ~NCSI_DEV_PRIV_FLAG_CHANGE_ACTIVE;
-
+		ncsi_start_channel_monitor(nc);
+		ncsi_process_next_channel(ndp);
 		break;
 	default:
-		pr_debug("%s: Unrecognized NCSI dev state 0x%x\n",
-			 __func__, nd->nd_state);
-		return;
+		netdev_warn(dev, "Wrong NCSI state 0x%x in config\n",
+			    nd->state);
 	}
 
 	return;
 
 error:
-	nd->nd_state = ncsi_dev_state_functional;
-	nd->nd_link_up = 0;
-	ndp->ndp_flags &= ~NCSI_DEV_PRIV_FLAG_CHANGE_ACTIVE;
-	nd->nd_handler(nd);
+	ncsi_report_link(ndp, true);
 }
 
-static void ncsi_choose_active_channel(struct ncsi_dev_priv *ndp)
+static int ncsi_choose_active_channel(struct ncsi_dev_priv *ndp)
 {
 	struct ncsi_package *np;
-	struct ncsi_channel *nc;
+	struct ncsi_channel *nc, *found;
 	struct ncsi_channel_mode *ncm;
+	unsigned long flags;
 
-	ndp->ndp_active_package = NULL;
-	ndp->ndp_active_channel = NULL;
+	/* The search is done once an inactive channel with up
+	 * link is found.
+	 */
+	found = NULL;
 	NCSI_FOR_EACH_PACKAGE(ndp, np) {
 		NCSI_FOR_EACH_CHANNEL(np, nc) {
-			if (!ndp->ndp_active_channel) {
-				ndp->ndp_active_package = np;
-				ndp->ndp_active_channel = nc;
-			}
+			if (!list_empty(&nc->link) ||
+			    nc->state != NCSI_CHANNEL_INACTIVE)
+				continue;
 
-			ncm = &nc->nc_modes[NCSI_MODE_LINK];
-			if (ncm->ncm_data[2] & 0x1) {
-				ndp->ndp_active_package = np;
-				ndp->ndp_active_channel = nc;
-				return;
+			if (!found)
+				found = nc;
+
+			ncm = &nc->modes[NCSI_MODE_LINK];
+			if (ncm->data[2] & 0x1) {
+				found = nc;
+				goto out;
 			}
 		}
 	}
+
+	if (!found) {
+		ncsi_report_link(ndp, true);
+		return -ENODEV;
+	}
+
+out:
+	spin_lock_irqsave(&ndp->lock, flags);
+	list_add_tail_rcu(&found->link, &ndp->channel_queue);
+	spin_unlock_irqrestore(&ndp->lock, flags);
+
+	return ncsi_process_next_channel(ndp);
 }
 
-static void ncsi_dev_probe(struct ncsi_dev_priv *ndp)
+static bool ncsi_check_hwa(struct ncsi_dev_priv *ndp)
 {
-	struct ncsi_dev *nd = &ndp->ndp_ndev;
+	struct ncsi_package *np;
+	struct ncsi_channel *nc;
+	unsigned int cap;
+
+	/* The hardware arbitration is disabled if any one channel
+	 * doesn't support explicitly.
+	 */
+	NCSI_FOR_EACH_PACKAGE(ndp, np) {
+		NCSI_FOR_EACH_CHANNEL(np, nc) {
+			cap = nc->caps[NCSI_CAP_GENERIC].cap;
+			if (!(cap & NCSI_CAP_GENERIC_HWA) ||
+			    (cap & NCSI_CAP_GENERIC_HWA_MASK) !=
+			    NCSI_CAP_GENERIC_HWA_SUPPORT) {
+				ndp->flags &= ~NCSI_DEV_HWA;
+				return false;
+			}
+		}
+	}
+
+	ndp->flags |= NCSI_DEV_HWA;
+	return true;
+}
+
+static int ncsi_enable_hwa(struct ncsi_dev_priv *ndp)
+{
+	struct ncsi_package *np;
+	struct ncsi_channel *nc;
+	unsigned long flags;
+
+	/* Move all available channels to processing queue */
+	spin_lock_irqsave(&ndp->lock, flags);
+	NCSI_FOR_EACH_PACKAGE(ndp, np) {
+		NCSI_FOR_EACH_CHANNEL(np, nc) {
+			WARN_ON_ONCE(nc->state != NCSI_CHANNEL_INACTIVE ||
+				     !list_empty(&nc->link));
+			ncsi_stop_channel_monitor(nc);
+			list_add_tail_rcu(&nc->link, &ndp->channel_queue);
+		}
+	}
+	spin_unlock_irqrestore(&ndp->lock, flags);
+
+	/* We can have no channels in extremely case */
+	if (list_empty(&ndp->channel_queue)) {
+		ncsi_report_link(ndp, false);
+		return -ENOENT;
+	}
+
+	return ncsi_process_next_channel(ndp);
+}
+
+static void ncsi_probe_channel(struct ncsi_dev_priv *ndp)
+{
+	struct ncsi_dev *nd = &ndp->ndev;
 	struct ncsi_package *np;
 	struct ncsi_channel *nc;
 	struct ncsi_cmd_arg nca;
 	unsigned char index;
 	int ret;
 
-	nca.nca_ndp = ndp;
-	switch (nd->nd_state) {
+	nca.ndp = ndp;
+	nca.driven = true;
+	switch (nd->state) {
 	case ncsi_dev_state_probe:
-		nd->nd_state = ncsi_dev_state_probe_deselect;
+		nd->state = ncsi_dev_state_probe_deselect;
 		/* Fall through */
 	case ncsi_dev_state_probe_deselect:
-		atomic_set(&ndp->ndp_pending_reqs, 8);
+		ndp->pending_req_num = 8;
 
 		/* Deselect all possible packages */
-		nca.nca_type = NCSI_PKT_CMD_DP;
-		nca.nca_channel = 0x1f;
+		nca.type = NCSI_PKT_CMD_DP;
+		nca.channel = 0x1f;
 		for (index = 0; index < 8; index++) {
-			nca.nca_package = index;
+			nca.package = index;
 			ret = ncsi_xmit_cmd(&nca);
 			if (ret)
 				goto error;
 		}
 
-		nd->nd_state = ncsi_dev_state_probe_package;
+		nd->state = ncsi_dev_state_probe_package;
 		break;
 	case ncsi_dev_state_probe_package:
-		atomic_set(&ndp->ndp_pending_reqs, 16);
+		ndp->pending_req_num = 16;
 
 		/* Select all possible packages */
-		nca.nca_type = NCSI_PKT_CMD_SP;
-		nca.nca_bytes[0] = 1;
-		nca.nca_channel = 0x1f;
+		nca.type = NCSI_PKT_CMD_SP;
+		nca.bytes[0] = 1;
+		nca.channel = 0x1f;
 		for (index = 0; index < 8; index++) {
-			nca.nca_package = index;
+			nca.package = index;
 			ret = ncsi_xmit_cmd(&nca);
 			if (ret)
 				goto error;
 		}
 
 		/* Disable all possible packages */
-		nca.nca_type = NCSI_PKT_CMD_DP;
+		nca.type = NCSI_PKT_CMD_DP;
 		for (index = 0; index < 8; index++) {
-			nca.nca_package = index;
+			nca.package = index;
 			ret = ncsi_xmit_cmd(&nca);
 			if (ret)
 				goto error;
 		}
 
-		nd->nd_state = ncsi_dev_state_probe_channel;
+		nd->state = ncsi_dev_state_probe_channel;
 		break;
 	case ncsi_dev_state_probe_channel:
-		if (!ndp->ndp_active_package)
-			ndp->ndp_active_package = list_first_or_null_rcu(
-							&ndp->ndp_packages,
-							struct ncsi_package,
-							np_node);
-		else if (list_is_last(&ndp->ndp_active_package->np_node,
-				      &ndp->ndp_packages))
-			ndp->ndp_active_package = NULL;
+		if (!ndp->active_package)
+			ndp->active_package = list_first_or_null_rcu(
+				&ndp->packages, struct ncsi_package, node);
+		else if (list_is_last(&ndp->active_package->node,
+				      &ndp->packages))
+			ndp->active_package = NULL;
 		else
-			ndp->ndp_active_package = list_next_entry(
-							ndp->ndp_active_package,
-							np_node);
+			ndp->active_package = list_next_entry(
+				ndp->active_package, node);
 
-		/*
-		 * All available packages and channels are enumerated. The
+		/* All available packages and channels are enumerated. The
 		 * enumeration happens for once when the NCSI interface is
 		 * started. So we need continue to start the interface after
 		 * the enumeration.
@@ -592,225 +862,240 @@ static void ncsi_dev_probe(struct ncsi_dev_priv *ndp)
 		 * Note that we possibly don't have active channel in extreme
 		 * situation.
 		 */
-		if (!ndp->ndp_active_package) {
-			ndp->ndp_flags |= NCSI_DEV_PRIV_FLAG_POPULATED;
-
-			ncsi_choose_active_channel(ndp);
-			if (!ndp->ndp_active_channel)
-				goto error;
-
-			nd->nd_state = ncsi_dev_state_config;
-			return ncsi_dev_config(ndp);
+		if (!ndp->active_package) {
+			ndp->flags |= NCSI_DEV_PROBED;
+			if (ncsi_check_hwa(ndp))
+				ncsi_enable_hwa(ndp);
+			else
+				ncsi_choose_active_channel(ndp);
+			return;
 		}
 
 		/* Select the active package */
-		atomic_set(&ndp->ndp_pending_reqs, 1);
-		nca.nca_type = NCSI_PKT_CMD_SP;
-		nca.nca_bytes[0] = 1;
-		nca.nca_package = ndp->ndp_active_package->np_id;
-		nca.nca_channel = 0x1f;
+		ndp->pending_req_num = 1;
+		nca.type = NCSI_PKT_CMD_SP;
+		nca.bytes[0] = 1;
+		nca.package = ndp->active_package->id;
+		nca.channel = 0x1f;
 		ret = ncsi_xmit_cmd(&nca);
 		if (ret)
 			goto error;
 
-		nd->nd_state = ncsi_dev_state_probe_cis;
+		nd->state = ncsi_dev_state_probe_cis;
 		break;
 	case ncsi_dev_state_probe_cis:
-		atomic_set(&ndp->ndp_pending_reqs, 0x20);
+		ndp->pending_req_num = 32;
 
 		/* Clear initial state */
-		nca.nca_type = NCSI_PKT_CMD_CIS;
-		nca.nca_package = ndp->ndp_active_package->np_id;
+		nca.type = NCSI_PKT_CMD_CIS;
+		nca.package = ndp->active_package->id;
 		for (index = 0; index < 0x20; index++) {
-			nca.nca_channel = index;
+			nca.channel = index;
 			ret = ncsi_xmit_cmd(&nca);
 			if (ret)
 				goto error;
 		}
 
-		nd->nd_state = ncsi_dev_state_probe_gvi;
+		nd->state = ncsi_dev_state_probe_gvi;
 		break;
 	case ncsi_dev_state_probe_gvi:
 	case ncsi_dev_state_probe_gc:
 	case ncsi_dev_state_probe_gls:
-		np = ndp->ndp_active_package;
-		atomic_set(&ndp->ndp_pending_reqs,
-			   atomic_read(&np->np_channel_num));
+		np = ndp->active_package;
+		ndp->pending_req_num = np->channel_num;
 
-		/* Get version information or get capacity */
-		if (nd->nd_state == ncsi_dev_state_probe_gvi)
-			nca.nca_type = NCSI_PKT_CMD_GVI;
-		else if (nd->nd_state == ncsi_dev_state_probe_gc)
-			nca.nca_type = NCSI_PKT_CMD_GC;
+		/* Retrieve version, capability or link status */
+		if (nd->state == ncsi_dev_state_probe_gvi)
+			nca.type = NCSI_PKT_CMD_GVI;
+		else if (nd->state == ncsi_dev_state_probe_gc)
+			nca.type = NCSI_PKT_CMD_GC;
 		else
-			nca.nca_type = NCSI_PKT_CMD_GLS;
+			nca.type = NCSI_PKT_CMD_GLS;
 
-		nca.nca_package = np->np_id;
+		nca.package = np->id;
 		NCSI_FOR_EACH_CHANNEL(np, nc) {
-			nca.nca_channel = nc->nc_id;
+			nca.channel = nc->id;
 			ret = ncsi_xmit_cmd(&nca);
 			if (ret)
 				goto error;
 		}
 
-		if (nd->nd_state == ncsi_dev_state_probe_gvi)
-			nd->nd_state = ncsi_dev_state_probe_gc;
-		else if (nd->nd_state == ncsi_dev_state_probe_gc)
-			nd->nd_state = ncsi_dev_state_probe_gls;
+		if (nd->state == ncsi_dev_state_probe_gvi)
+			nd->state = ncsi_dev_state_probe_gc;
+		else if (nd->state == ncsi_dev_state_probe_gc)
+			nd->state = ncsi_dev_state_probe_gls;
 		else
-			nd->nd_state = ncsi_dev_state_probe_dp;
+			nd->state = ncsi_dev_state_probe_dp;
 		break;
 	case ncsi_dev_state_probe_dp:
-		atomic_set(&ndp->ndp_pending_reqs, 1);
+		ndp->pending_req_num = 1;
 
 		/* Deselect the active package */
-		nca.nca_type = NCSI_PKT_CMD_DP;
-		nca.nca_package = ndp->ndp_active_package->np_id;
-		nca.nca_channel = 0x1f;
+		nca.type = NCSI_PKT_CMD_DP;
+		nca.package = ndp->active_package->id;
+		nca.channel = 0x1f;
 		ret = ncsi_xmit_cmd(&nca);
 		if (ret)
 			goto error;
 
 		/* Scan channels in next package */
-		nd->nd_state = ncsi_dev_state_probe_channel;
+		nd->state = ncsi_dev_state_probe_channel;
 		break;
 	default:
-		pr_warn("%s: Unrecognized NCSI dev state 0x%x\n",
-			__func__, nd->nd_state);
+		netdev_warn(nd->dev, "Wrong NCSI state 0x%0x in enumeration\n",
+			    nd->state);
 	}
 
 	return;
 error:
-	nd->nd_state = ncsi_dev_state_functional;
-	nd->nd_link_up = 0;
-	nd->nd_handler(nd);
-}
-
-static void ncsi_dev_suspend(struct ncsi_dev_priv *ndp)
-{
-	struct ncsi_dev *nd = &ndp->ndp_ndev;
-	struct ncsi_package *np;
-	struct ncsi_channel *nc;
-	struct ncsi_cmd_arg nca;
-	int ret;
-
-	nca.nca_ndp = ndp;
-	switch (nd->nd_state) {
-	case ncsi_dev_state_suspend:
-		/* If there're no active channel, we're done */
-		if (!ndp->ndp_active_channel) {
-			nd->nd_state = ncsi_dev_state_suspend_done;
-			goto done;
-		}
-
-		nd->nd_state = ncsi_dev_state_suspend_select;
-		/* Fall through */
-	case ncsi_dev_state_suspend_select:
-	case ncsi_dev_state_suspend_dcnt:
-	case ncsi_dev_state_suspend_dc:
-	case ncsi_dev_state_suspend_deselect:
-		atomic_set(&ndp->ndp_pending_reqs, 1);
-
-		np = ndp->ndp_active_package;
-		nc = ndp->ndp_active_channel;
-		nca.nca_package = np->np_id;
-		if (nd->nd_state == ncsi_dev_state_suspend_select) {
-			nca.nca_type = NCSI_PKT_CMD_SP;
-			nca.nca_channel = 0x1f;
-			nca.nca_bytes[0] = 1;
-			nd->nd_state = ncsi_dev_state_suspend_dcnt;
-		} else if (nd->nd_state == ncsi_dev_state_suspend_dcnt) {
-			nca.nca_type = NCSI_PKT_CMD_DCNT;
-			nca.nca_channel = nc->nc_id;
-			nd->nd_state = ncsi_dev_state_suspend_dc;
-		} else if (nd->nd_state == ncsi_dev_state_suspend_dc) {
-			nca.nca_type = NCSI_PKT_CMD_DC;
-			nca.nca_channel = nc->nc_id;
-			nca.nca_bytes[0] = 1;
-			nd->nd_state = ncsi_dev_state_suspend_deselect;
-		} else if (nd->nd_state == ncsi_dev_state_suspend_deselect) {
-			nca.nca_type = NCSI_PKT_CMD_DP;
-			nca.nca_channel = 0x1f;
-			nd->nd_state = ncsi_dev_state_suspend_done;
-		}
-
-		ret = ncsi_xmit_cmd(&nca);
-		if (ret) {
-			nd->nd_state = ncsi_dev_state_suspend_done;
-			goto done;
-		}
-
-		break;
-	case ncsi_dev_state_suspend_done:
-done:
-		if (ndp->ndp_flags & NCSI_DEV_PRIV_FLAG_CHANGE_ACTIVE)
-			ncsi_choose_active_channel(ndp);
-
-		if (!ndp->ndp_active_channel) {
-			nd->nd_state = ncsi_dev_state_functional;
-			nd->nd_link_up = 0;
-			nd->nd_handler(nd);
-		} else {
-			nd->nd_state = ncsi_dev_state_config;
-			ncsi_dev_config(ndp);
-		}
-
-		break;
-	default:
-		pr_warn("%s: Unsupported NCSI dev state 0x%x\n",
-			__func__, nd->nd_state);
-	}
+	ncsi_report_link(ndp, true);
 }
 
 static void ncsi_dev_work(struct work_struct *work)
 {
-	struct ncsi_dev_priv *ndp = container_of(work, struct ncsi_dev_priv,
-						 ndp_work);
-	struct ncsi_dev *nd = &ndp->ndp_ndev;
+	struct ncsi_dev_priv *ndp = container_of(work,
+			struct ncsi_dev_priv, work);
+	struct ncsi_dev *nd = &ndp->ndev;
 
-	switch (nd->nd_state & ncsi_dev_state_major) {
+	switch (nd->state & ncsi_dev_state_major) {
 	case ncsi_dev_state_probe:
-		ncsi_dev_probe(ndp);
+		ncsi_probe_channel(ndp);
 		break;
 	case ncsi_dev_state_suspend:
-		ncsi_dev_suspend(ndp);
+		ncsi_suspend_channel(ndp);
 		break;
 	case ncsi_dev_state_config:
-		ncsi_dev_config(ndp);
+		ncsi_configure_channel(ndp);
 		break;
 	default:
-		pr_warn("%s: Unsupported NCSI dev state 0x%x\n",
-			__func__, nd->nd_state);
+		netdev_warn(nd->dev, "Wrong NCSI state 0x%x in workqueue\n",
+			    nd->state);
 	}
 }
 
-static void ncsi_req_timeout(unsigned long data)
+int ncsi_process_next_channel(struct ncsi_dev_priv *ndp)
 {
-	struct ncsi_req *nr = (struct ncsi_req *)data;
-	struct ncsi_dev_priv *ndp = nr->nr_ndp;
+	struct ncsi_channel *nc;
+	int old_state;
 	unsigned long flags;
 
-	/* If the request already had associated response,
-	 * let the response handler to release it.
-	 */
-	spin_lock_irqsave(&ndp->ndp_req_lock, flags);
-	nr->nr_timer_enabled = false;
-	if (nr->nr_rsp || !nr->nr_cmd) {
-		spin_unlock_irqrestore(&ndp->ndp_req_lock, flags);
-		return;
+	spin_lock_irqsave(&ndp->lock, flags);
+	nc = list_first_or_null_rcu(&ndp->channel_queue,
+				    struct ncsi_channel, link);
+	if (!nc) {
+		spin_unlock_irqrestore(&ndp->lock, flags);
+		goto out;
 	}
-	spin_unlock_irqrestore(&ndp->ndp_req_lock, flags);
 
-	/* Release the request */
-	ncsi_free_req(nr, true, true);
+	old_state = xchg(&nc->state, NCSI_CHANNEL_INVISIBLE);
+	list_del_init(&nc->link);
+
+	spin_unlock_irqrestore(&ndp->lock, flags);
+
+	ndp->active_channel = nc;
+	ndp->active_package = nc->package;
+
+	switch (old_state) {
+	case NCSI_CHANNEL_INACTIVE:
+		ndp->ndev.state = ncsi_dev_state_config;
+		ncsi_configure_channel(ndp);
+		break;
+	case NCSI_CHANNEL_ACTIVE:
+		ndp->ndev.state = ncsi_dev_state_suspend;
+		ncsi_suspend_channel(ndp);
+		break;
+	default:
+		netdev_err(ndp->ndev.dev, "Invalid state 0x%x on %d:%d\n",
+			   nc->state, nc->package->id, nc->id);
+		ncsi_report_link(ndp, false);
+		return -EINVAL;
+	}
+
+	return 0;
+
+out:
+	ndp->active_channel = NULL;
+	ndp->active_package = NULL;
+	if (ndp->flags & NCSI_DEV_RESHUFFLE) {
+		ndp->flags &= ~NCSI_DEV_RESHUFFLE;
+		return ncsi_choose_active_channel(ndp);
+	}
+
+	ncsi_report_link(ndp, false);
+	return -ENODEV;
 }
+
+#if IS_ENABLED(CONFIG_IPV6)
+static int ncsi_inet6addr_event(struct notifier_block *this,
+				unsigned long event, void *data)
+{
+	struct inet6_ifaddr *ifa = data;
+	struct net_device *dev = ifa->idev->dev;
+	struct ncsi_dev *nd = ncsi_find_dev(dev);
+	struct ncsi_dev_priv *ndp = nd ? TO_NCSI_DEV_PRIV(nd) : NULL;
+	struct ncsi_package *np;
+	struct ncsi_channel *nc;
+	struct ncsi_cmd_arg nca;
+	bool action;
+	int ret;
+
+	if (!ndp || (ipv6_addr_type(&ifa->addr) &
+	    (IPV6_ADDR_LINKLOCAL | IPV6_ADDR_LOOPBACK)))
+		return NOTIFY_OK;
+
+	switch (event) {
+	case NETDEV_UP:
+		action = (++ndp->inet6_addr_num) == 1;
+		nca.type = NCSI_PKT_CMD_EGMF;
+		break;
+	case NETDEV_DOWN:
+		action = (--ndp->inet6_addr_num == 0);
+		nca.type = NCSI_PKT_CMD_DGMF;
+		break;
+	default:
+		return NOTIFY_OK;
+	}
+
+	/* We might not have active channel or packages. The IPv6
+	 * required multicast will be enabled when active channel
+	 * or packages are chosen.
+	 */
+	np = ndp->active_package;
+	nc = ndp->active_channel;
+	if (!action || !np || !nc)
+		return NOTIFY_OK;
+
+	/* We needn't enable or disable it if the function isn't supported */
+	if (!(nc->caps[NCSI_CAP_GENERIC].cap & NCSI_CAP_GENERIC_MC))
+		return NOTIFY_OK;
+
+	nca.ndp = ndp;
+	nca.driven = false;
+	nca.package = np->id;
+	nca.channel = nc->id;
+	nca.dwords[0] = nc->caps[NCSI_CAP_MC].cap;
+	ret = ncsi_xmit_cmd(&nca);
+	if (ret) {
+		netdev_warn(dev, "Fail to %s global multicast filter (%d)\n",
+			    (event == NETDEV_UP) ? "enable" : "disable", ret);
+		return NOTIFY_DONE;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block ncsi_inet6addr_notifier = {
+	.notifier_call = ncsi_inet6addr_event,
+};
+#endif /* CONFIG_IPV6 */
 
 struct ncsi_dev *ncsi_register_dev(struct net_device *dev,
 				   void (*handler)(struct ncsi_dev *ndev))
 {
 	struct ncsi_dev_priv *ndp;
 	struct ncsi_dev *nd;
-	int idx;
+	unsigned long flags;
+	int i;
 
 	/* Check if the device has been registered or not */
 	nd = ncsi_find_dev(dev);
@@ -819,38 +1104,43 @@ struct ncsi_dev *ncsi_register_dev(struct net_device *dev,
 
 	/* Create NCSI device */
 	ndp = kzalloc(sizeof(*ndp), GFP_ATOMIC);
-	if (!ndp) {
-		pr_warn("%s: Out of memory !\n", __func__);
+	if (!ndp)
 		return NULL;
-	}
 
-	nd = &ndp->ndp_ndev;
-	nd->nd_state = ncsi_dev_state_registered;
-	nd->nd_dev = dev;
-	nd->nd_handler = handler;
+	nd = &ndp->ndev;
+	nd->state = ncsi_dev_state_registered;
+	nd->dev = dev;
+	nd->handler = handler;
+	ndp->pending_req_num = 0;
+	INIT_LIST_HEAD(&ndp->channel_queue);
+	INIT_WORK(&ndp->work, ncsi_dev_work);
 
 	/* Initialize private NCSI device */
-	spin_lock_init(&ndp->ndp_package_lock);
-	INIT_LIST_HEAD(&ndp->ndp_packages);
-	INIT_WORK(&ndp->ndp_work, ncsi_dev_work);
-	spin_lock_init(&ndp->ndp_req_lock);
-	atomic_set(&ndp->ndp_last_req_idx, 0);
-	for (idx = 0; idx < 256; idx++) {
-		ndp->ndp_reqs[idx].nr_id = idx;
-		ndp->ndp_reqs[idx].nr_ndp = ndp;
-		setup_timer(&ndp->ndp_reqs[idx].nr_timer, ncsi_req_timeout,
-			    (unsigned long)&ndp->ndp_reqs[idx]);
+	spin_lock_init(&ndp->lock);
+	INIT_LIST_HEAD(&ndp->packages);
+	ndp->request_id = 0;
+	for (i = 0; i < ARRAY_SIZE(ndp->requests); i++) {
+		ndp->requests[i].id = i;
+		ndp->requests[i].ndp = ndp;
+		setup_timer(&ndp->requests[i].timer,
+			    ncsi_request_timeout,
+			    (unsigned long)&ndp->requests[i]);
 	}
 
-	spin_lock(&ncsi_dev_lock);
-	list_add_tail_rcu(&ndp->ndp_node, &ncsi_dev_list);
-	spin_unlock(&ncsi_dev_lock);
+	spin_lock_irqsave(&ncsi_dev_lock, flags);
+#if IS_ENABLED(CONFIG_IPV6)
+	ndp->inet6_addr_num = 0;
+	if (list_empty(&ncsi_dev_list))
+		register_inet6addr_notifier(&ncsi_inet6addr_notifier);
+#endif
+	list_add_tail_rcu(&ndp->node, &ncsi_dev_list);
+	spin_unlock_irqrestore(&ncsi_dev_lock, flags);
 
-	/* Register NCSI packet receiption handler */
-	ndp->ndp_ptype.type = cpu_to_be16(ETH_P_NCSI);
-	ndp->ndp_ptype.func = ncsi_rcv_rsp;
-	ndp->ndp_ptype.dev = dev;
-	dev_add_pack(&ndp->ndp_ptype);
+	/* Register NCSI packet Rx handler */
+	ndp->ptype.type = cpu_to_be16(ETH_P_NCSI);
+	ndp->ptype.func = ncsi_rcv_rsp;
+	ndp->ptype.dev = dev;
+	dev_add_pack(&ndp->ptype);
 
 	return nd;
 }
@@ -859,63 +1149,57 @@ EXPORT_SYMBOL_GPL(ncsi_register_dev);
 int ncsi_start_dev(struct ncsi_dev *nd)
 {
 	struct ncsi_dev_priv *ndp = TO_NCSI_DEV_PRIV(nd);
+	struct ncsi_package *np;
+	struct ncsi_channel *nc;
+	int old_state, ret;
 
-	if (nd->nd_state != ncsi_dev_state_registered &&
-	    nd->nd_state != ncsi_dev_state_functional)
+	if (nd->state != ncsi_dev_state_registered &&
+	    nd->state != ncsi_dev_state_functional)
 		return -ENOTTY;
 
-	if (!(ndp->ndp_flags & NCSI_DEV_PRIV_FLAG_POPULATED)) {
-		nd->nd_state = ncsi_dev_state_probe;
-		schedule_work(&ndp->ndp_work);
+	if (!(ndp->flags & NCSI_DEV_PROBED)) {
+		nd->state = ncsi_dev_state_probe;
+		schedule_work(&ndp->work);
 		return 0;
 	}
 
-	/* Choose active package and channel */
-	ncsi_choose_active_channel(ndp);
-	if (!ndp->ndp_active_channel)
-		return -ENXIO;
+	/* Reset channel's state and start over */
+	NCSI_FOR_EACH_PACKAGE(ndp, np) {
+		NCSI_FOR_EACH_CHANNEL(np, nc) {
+			old_state = xchg(&nc->state, NCSI_CHANNEL_INACTIVE);
+			WARN_ON_ONCE(!list_empty(&nc->link) ||
+				     old_state == NCSI_CHANNEL_INVISIBLE);
+		}
+	}
 
-	return ncsi_config_dev(nd);
+	if (ndp->flags & NCSI_DEV_HWA)
+		ret = ncsi_enable_hwa(ndp);
+	else
+		ret = ncsi_choose_active_channel(ndp);
+
+	return ret;
 }
 EXPORT_SYMBOL_GPL(ncsi_start_dev);
-
-int ncsi_config_dev(struct ncsi_dev *nd)
-{
-	struct ncsi_dev_priv *ndp = TO_NCSI_DEV_PRIV(nd);
-
-	if (nd->nd_state != ncsi_dev_state_functional)
-		return -ENOTTY;
-
-	nd->nd_state = ncsi_dev_state_config;
-	schedule_work(&ndp->ndp_work);
-
-	return 0;
-}
-
-int ncsi_suspend_dev(struct ncsi_dev *nd)
-{
-	struct ncsi_dev_priv *ndp = TO_NCSI_DEV_PRIV(nd);
-
-	if (nd->nd_state != ncsi_dev_state_functional)
-		return -ENOTTY;
-
-	nd->nd_state = ncsi_dev_state_suspend;
-	schedule_work(&ndp->ndp_work);
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(ncsi_suspend_dev);
 
 void ncsi_unregister_dev(struct ncsi_dev *nd)
 {
 	struct ncsi_dev_priv *ndp = TO_NCSI_DEV_PRIV(nd);
 	struct ncsi_package *np, *tmp;
+	unsigned long flags;
 
-	dev_remove_pack(&ndp->ndp_ptype);
+	dev_remove_pack(&ndp->ptype);
 
-	spin_lock(&ndp->ndp_package_lock);
-	list_for_each_entry_safe(np, tmp, &ndp->ndp_packages, np_node)
-		ncsi_release_package(np);
-	spin_unlock(&ndp->ndp_package_lock);
+	list_for_each_entry_safe(np, tmp, &ndp->packages, node)
+		ncsi_remove_package(np);
+
+	spin_lock_irqsave(&ncsi_dev_lock, flags);
+	list_del_rcu(&ndp->node);
+#if IS_ENABLED(CONFIG_IPV6)
+	if (list_empty(&ncsi_dev_list))
+		unregister_inet6addr_notifier(&ncsi_inet6addr_notifier);
+#endif
+	spin_unlock_irqrestore(&ncsi_dev_lock, flags);
+
+	kfree(ndp);
 }
 EXPORT_SYMBOL_GPL(ncsi_unregister_dev);

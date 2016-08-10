@@ -368,6 +368,15 @@ static void ehci_shutdown(struct usb_hcd *hcd)
 {
 	struct ehci_hcd	*ehci = hcd_to_ehci(hcd);
 
+	/**
+	 * Protect the system from crashing at system shutdown in cases where
+	 * usb host is not added yet from OTG controller driver.
+	 * As ehci_setup() not done yet, so stop accessing registers or
+	 * variables initialized in ehci_setup()
+	 */
+	if (!ehci->sbrn)
+		return;
+
 	spin_lock_irq(&ehci->lock);
 	ehci->shutdown = true;
 	ehci->rh_state = EHCI_RH_STOPPING;
@@ -1302,11 +1311,6 @@ MODULE_LICENSE ("GPL");
 #ifdef CONFIG_MIPS_SEAD3
 #include "ehci-sead3.c"
 #define	PLATFORM_DRIVER		ehci_hcd_sead3_driver
-#endif
-
-#ifdef CONFIG_USB_EHCI_ASPEED
-#include "ehci-aspeed.c"
-#define	PLATFORM_DRIVER		ehci_hcd_ast_driver
 #endif
 
 static int __init ehci_hcd_init(void)

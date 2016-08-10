@@ -1,78 +1,19 @@
+/*
+ * Copyright 2016 IBM Corporation
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
+ */
+
 #include <linux/init.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/io.h>
-#include <linux/pinctrl/machine.h>
-#include <linux/pinctrl/consumer.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
-
-// XXX TEMP HACKERY
-//
-// To be replaced by proper clock, pinmux and syscon drivers operating
-// from DT parameters
-static struct pinctrl_map palmetto_mapping[] __initdata = {
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-3", "1e6e2000.pinmux", NULL, "I2C3"),
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-4", "1e6e2000.pinmux", NULL, "I2C4"),
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-5", "1e6e2000.pinmux", NULL, "I2C5"),
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-6", "1e6e2000.pinmux", NULL, "I2C6"),
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-7", "1e6e2000.pinmux", NULL, "I2C7"),
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-8", "1e6e2000.pinmux", NULL, "I2C8"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NCTS4"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NDCD4"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NRI4"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "TXD4"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "RXD4"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "FLBUSY"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "FLWP"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "VGAHS"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "VGAVS"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "DDCCLK"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "DDCDAT"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NCTS1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NDCD1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NDSR1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NRI1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NDTR1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "NRTS1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "TXD1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "RXD1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "PWM0"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "PWM1"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "PWM2"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "PWM3"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "PWM4"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "PWM5"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "PWM6"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "PWM7"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "BMCINT"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "FLACK"),
-	PIN_MAP_MUX_GROUP_HOG_DEFAULT("1e6e2000.pinmux", NULL, "ROM8"),
-};
-
-static struct pinctrl_map ast2500_mapping[] __initdata = {
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-8", "1e6e2000.pinmux", NULL, "I2C9"),
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-3", "1e6e2000.pinmux", NULL, "I2C4"),
-	PIN_MAP_MUX_GROUP_DEFAULT("i2c-2", "1e6e2000.pinmux", NULL, "I2C3"),
-};
-
-static void __init aspeed_dt_init(void)
-{
-	int ret = 0;
-
-	if (of_machine_is_compatible("tyan,palmetto-bmc"))
-		ret = pinctrl_register_mappings(palmetto_mapping,
-				ARRAY_SIZE(palmetto_mapping));
-
-	if (of_machine_is_compatible("aspeed,ast2500-evb"))
-		ret = pinctrl_register_mappings(ast2500_mapping,
-				ARRAY_SIZE(ast2500_mapping));
-	if (ret)
-		printk("Failed to register mappings with pinmux :(\n");
-
-	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
-}
 
 #define AST_IO_VA	0xf0000000
 #define AST_IO_PA	0x1e600000
@@ -113,13 +54,14 @@ static void __init do_common_setup(void)
 	 *    operation they all need to be in GPIO mode (SCU90[0] = 0)
 	 *    and then pulled down
 	 */
+	/* TODO: This should go in the GPIO driver device tree bindings */
 	writel(0x01C000FF, AST_IO(AST_BASE_SCU | 0x88));
 	writel(0xC1C000FF, AST_IO(AST_BASE_SCU | 0x8c));
-	writel(0x0000A008, AST_IO(AST_BASE_SCU | 0x90));
+	writel(0x003FA008, AST_IO(AST_BASE_SCU | 0x90));
 
 	/* Setup scratch registers */
 	writel(0x00000042, AST_IO(AST_BASE_LPC | 0x170));
-	writel(0x00004000, AST_IO(AST_BASE_LPC | 0x174));
+	writel(0x00008000, AST_IO(AST_BASE_LPC | 0x174));
 }
 
 static void __init do_barreleye_setup(void)
@@ -141,8 +83,10 @@ static void __init do_barreleye_setup(void)
 	 *    Barreleye so they can be used to read the PCIe inventory
 	 *    status
 	 */
-
 	writel(0x01C00000, AST_IO(AST_BASE_SCU | 0x88));
+
+	/* To enable GPIOE0 pass through function debounce mode */
+	writel(0x010FFFFF, AST_IO(AST_BASE_SCU | 0xA8));
 
 	/*
 	 * Do read/modify/write on power gpio to prevent resetting power on
@@ -153,6 +97,14 @@ static void __init do_barreleye_setup(void)
 	writel(reg, AST_IO(AST_BASE_GPIO | 0x20));
 	writel(0xC738F20A, AST_IO(AST_BASE_GPIO | 0x24));
 	writel(0x0031FFAF, AST_IO(AST_BASE_GPIO | 0x80));
+
+	/* Select TIMER3 as debounce timer */
+	writel(0x00000001, AST_IO(AST_BASE_GPIO | 0x48));
+	writel(0x00000001, AST_IO(AST_BASE_GPIO | 0x4C));
+
+	/* Set debounce timer to 480000 cycles, with a pclk of 48MHz,
+	 * corresponds to 20 ms. This time was found by experimentation */
+	writel(0x000EA600, AST_IO(AST_BASE_GPIO | 0x58));
 }
 
 static void __init do_palmetto_setup(void)
@@ -162,12 +114,6 @@ static void __init do_palmetto_setup(void)
 	/* Setup PNOR address mapping for 32M flash */
 	writel(0x30000E00, AST_IO(AST_BASE_LPC | 0x88));
 	writel(0xFE0001FF, AST_IO(AST_BASE_LPC | 0x8C));
-
-	/* GPIO setup */
-	writel(0x13008CE7, AST_IO(AST_BASE_GPIO | 0x00));
-	writel(0x0370E677, AST_IO(AST_BASE_GPIO | 0x04));
-	writel(0xDF48F7FF, AST_IO(AST_BASE_GPIO | 0x20));
-	writel(0xC738F202, AST_IO(AST_BASE_GPIO | 0x24));
 
 	/* SCU setup */
 	writel(0x01C0007F, AST_IO(AST_BASE_SCU | 0x88));
@@ -185,12 +131,9 @@ static void __init do_garrison_setup(void)
 	writel(0xd7000000, AST_IO(AST_BASE_SCU | 0x88));
 }
 
-static void __init do_ast2500evb_setup(void)
+static void __init do_ast2500_common_setup(void)
 {
 	unsigned long reg;
-
-	/* Reset AHB bridges */
-	writel(0x02, AST_IO(AST_BASE_SCU | 0x04));
 
 	/* Set old MDIO interface */
 	reg = readl(AST_IO(AST_BASE_MAC0 | 0x40));
@@ -198,17 +141,36 @@ static void __init do_ast2500evb_setup(void)
 	writel(reg, AST_IO(AST_BASE_MAC0 | 0x40));
 }
 
+static void __init do_ast2500evb_setup(void)
+{
+	unsigned long reg;
+
+	do_ast2500_common_setup();
+
+	/* Set strap to RGMII for dedicated PHY networking */
+	reg = readl(AST_IO(AST_BASE_SCU | 0x70));
+	reg |= BIT(6) | BIT(7);
+	writel(reg, AST_IO(AST_BASE_SCU | 0x70));
+}
+
+static void __init do_witherspoon_setup(void)
+{
+	do_ast2500_common_setup();
+}
+
+
 #define SCU_PASSWORD	0x1688A8A8
 
 static void __init aspeed_init_early(void)
 {
-	// XXX UART stuff to fix to pinmux & co
-	writel(0x02010023, AST_IO(AST_BASE_LPC | 0x9c));
-
 	/* Unlock SCU */
 	writel(SCU_PASSWORD, AST_IO(AST_BASE_SCU));
 
+	/* Reset AHB bridges */
+	writel(0x02, AST_IO(AST_BASE_SCU | 0x04));
+
 	/* Enable UART4 RXD4, TXD4, NRI4, NDCD4, NCTS4 */
+	/* TODO: This should be pinmux. Also, why are we enabling uart4? */
 	writel(0xcb000000, AST_IO(AST_BASE_SCU | 0x80));
 
 	/* Enable
@@ -216,6 +178,7 @@ static void __init aspeed_init_early(void)
 	 *  - VGA DDCDAT, DDCCLK, VGAVS, VGAHS.
 	 *  - NAND flash FLWP#, FLBUSY#
 	 */
+	/* TODO: This should be pinmux */
 	writel(0x00fff0c0, AST_IO(AST_BASE_SCU | 0x84));
 
 	/* Enables all the clocks except D2CLK, USB1.1 Host, USB1.1, LHCLK */
@@ -237,7 +200,8 @@ static void __init aspeed_init_early(void)
 		do_garrison_setup();
 	if (of_machine_is_compatible("aspeed,ast2500-evb"))
 		do_ast2500evb_setup();
-
+	if (of_machine_is_compatible("ibm,witherspoon-bmc"))
+		do_witherspoon_setup();
 }
 
 static void __init aspeed_map_io(void)
@@ -258,5 +222,4 @@ DT_MACHINE_START(aspeed_dt, "ASpeed SoC")
 	.init_early	= aspeed_init_early,
 	.dt_compat	= aspeed_dt_match,
 	.map_io		= aspeed_map_io,
-	.init_machine	= aspeed_dt_init,
 MACHINE_END

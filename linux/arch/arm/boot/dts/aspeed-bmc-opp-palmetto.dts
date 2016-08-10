@@ -1,8 +1,7 @@
 /dts-v1/;
 
 #include "aspeed-g4.dtsi"
-
-#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/gpio/aspeed-gpio.h>
 
 / {
 	model = "Palmetto BMC";
@@ -21,13 +20,29 @@
 		reg = <0x40000000 0x10000000>;
 	};
 
+        leds {
+                compatible = "gpio-leds";
+
+                heartbeat {
+                        gpios = <&gpio ASPEED_GPIO(R, 4) GPIO_ACTIVE_LOW>;
+                };
+
+                power {
+                        gpios = <&gpio ASPEED_GPIO(R, 5) GPIO_ACTIVE_LOW>;
+                };
+
+                identify {
+                        gpios = <&gpio ASPEED_GPIO(A, 2) GPIO_ACTIVE_LOW>;
+                };
+        };
+
 	ahb {
 		bmc_pnor: fmc@1e620000 {
 			reg = < 0x1e620000 0x94
 				0x20000000 0x02000000 >;
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "aspeed,fmc";
+			compatible = "aspeed,ast2400-fmc";
 			flash@0 {
 				reg = < 0 >;
 				compatible = "jedec,spi-nor" ;
@@ -40,7 +55,7 @@
 				0x30000000 0x02000000 >;
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "aspeed,smc";
+			compatible = "aspeed,ast2400-smc";
 			flash {
 				reg = < 0 >;
 				compatible = "jedec,spi-nor" ;
@@ -48,29 +63,27 @@
 			};
 		};
 	};
+};
 
-	leds {
-		compatible = "gpio-leds";
+&pinctrl {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_flbusy_default &pinctrl_flwp_default
 
-		heartbeat {
-			gpios = <&gpio 140 GPIO_ACTIVE_LOW>;
-		};
+			&pinctrl_vgahs_default &pinctrl_vgavs_default
+			&pinctrl_ddcclk_default &pinctrl_ddcdat_default
 
-		power {
-			gpios = <&gpio 141 GPIO_ACTIVE_LOW>;
-		};
+			&pinctrl_pwm1_default &pinctrl_pwm2_default
+			&pinctrl_pwm3_default &pinctrl_pwm4_default
+			&pinctrl_pwm5_default &pinctrl_pwm6_default
+			&pinctrl_pwm7_default
 
-		identify {
-			gpios = <&gpio 2 GPIO_ACTIVE_LOW>;
-		};
-
-	};
+			&pinctrl_bmcint_default &pinctrl_flack_default>;
 };
 
 &mac0 {
 	status = "okay";
 
-	use-nc-si;
+	use-ncsi;
 	no-hw-checksum;
 };
 
@@ -95,6 +108,10 @@
 	};
 };
 
+&i2c1 {
+	status = "okay";
+};
+
 &i2c2 {
 	status = "okay";
 
@@ -113,3 +130,45 @@
 	};
 };
 
+&i2c4 {
+	status = "okay";
+};
+
+&i2c5 {
+	status = "okay";
+};
+
+&i2c6 {
+	status = "okay";
+};
+
+&i2c7 {
+	status = "okay";
+};
+
+&gpio {
+	pin_func_mode0 {
+		gpio-hog;
+		gpios = <ASPEED_GPIO(C, 4) GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "func_mode0";
+	};
+
+	pin_func_mode1 {
+		gpio-hog;
+		gpios = <ASPEED_GPIO(C, 5)  GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "func_mode1";
+	};
+
+	pin_func_mode2 {
+		gpio-hog;
+		gpios = <ASPEED_GPIO(C, 6) GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "func_mode2";
+	};
+};
+
+&vuart {
+	status = "okay";
+};

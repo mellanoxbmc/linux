@@ -24,17 +24,6 @@ config DEBUG_PINCTRL
 	help
 	  Say Y here to add some extra checks and diagnostics to PINCTRL calls.
 
-config PINCTRL_ASPEED
-	bool "Aspeed pin controller driver"
-	depends on ARCH_ASPEED
-	select PINMUX
-	select GENERIC_PINCONF
-	help
-	  This is the pin controller and gpio driver for the AST2400 and future
-	  SoC revisions. This option is selected automatically when specific
-	  machine and arch are selected to build.
-
-
 config PINCTRL_ADI2
 	bool "ADI pin controller driver"
 	depends on BLACKFIN
@@ -243,6 +232,7 @@ config PINCTRL_ZYNQ
 	help
 	  This selects the pinctrl driver for Xilinx Zynq.
 
+source "drivers/pinctrl/aspeed/Kconfig"
 source "drivers/pinctrl/bcm/Kconfig"
 source "drivers/pinctrl/berlin/Kconfig"
 source "drivers/pinctrl/freescale/Kconfig"
@@ -260,7 +250,6 @@ source "drivers/pinctrl/tegra/Kconfig"
 source "drivers/pinctrl/uniphier/Kconfig"
 source "drivers/pinctrl/vt8500/Kconfig"
 source "drivers/pinctrl/mediatek/Kconfig"
-source "drivers/pinctrl/aspeed/Kconfig"
 
 config PINCTRL_XWAY
 	bool
