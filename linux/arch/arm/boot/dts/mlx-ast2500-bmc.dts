@@ -46,24 +46,17 @@
 };
 
 &mac0 {
-        status = "okay";
+	status = "okay";
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_rgmii1_default>;
 };
 
 &mac1 {
-        status = "okay";
-        use-nc-si;
-};
-
-&i2c0 {
 	status = "okay";
-};
 
-&i2c1 {
-	status = "okay";
-};
-
-&i2c2 {
-	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_rgmii2_default>;
 };
 
 &i2c3 {
@@ -116,6 +109,14 @@
 };
 
 &jtag {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&i2c2 {
 	status = "okay";
 };
 
