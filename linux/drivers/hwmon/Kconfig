@@ -1828,4 +1828,6 @@ config SENSORS_ATK0110
 
 endif # ACPI
 
+source drivers/hwmon/aspeed/Kconfig
+
 endif # HWMON

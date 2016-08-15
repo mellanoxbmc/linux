@@ -1,0 +1,11 @@
+menu "ASPEED hwmon support"
+
+config SENSORS_ASPEED_PWM_FAN
+        tristate "ASPEED PWM & FAN Tacho Controller Driver"
+        depends on ARCH_ASPEED
+        default n
+        help
+          This driver provides support for the ASPEED PWM & FAN Tachometer
+          Controller, which provides an Sensor, fan control.
+
+endmenu
