@@ -1,0 +1,121 @@
+/dts-v1/;
+
+#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/pwm/pwm.h>
+#include "aspeed-g5-mlx.dtsi"
+
+/ {
+	model = "AST2500 EVB";
+	compatible = "mellanox,mlx-bmc", "aspeed,ast2500-evb", "aspeed,ast2500";
+
+	aliases {
+		serial4 = &uart5;
+	};
+
+        aliases {
+                serial0 = &uart5;
+        };
+
+	chosen {
+		stdout-path = &uart5;
+		bootargs = "console=ttyS4,115200n8 earlyprintk";
+	};
+
+	memory {
+		reg = <0x80000000 0x20000000>;
+	};
+
+	ahb {
+		bmc_pnor: fmc@1e620000 {
+			reg = < 0x1e620000 0x94
+				0x20000000 0x02000000 >;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "aspeed,ast2500-fmc";
+			flash@0 {
+				reg = < 0 >;
+				compatible = "jedec,spi-nor" ;
+#include "aspeed-bmc-mlx-flash-layout.dtsi"
+			};
+		};
+	};
+};
+
+&uart5 {
+	status = "okay";
+};
+
+&mac0 {
+        status = "okay";
+};
+
+&mac1 {
+        status = "okay";
+        use-nc-si;
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+};
+
+&i2c2 {
+	status = "okay";
+};
+
+&i2c3 {
+	status = "okay";
+        eeprom@50 {
+                compatible = "atmel,24c08";
+                reg = <0x50>;
+                pagesize = <16>;
+        };
+};
+
+&i2c7 {
+	status = "okay";
+	lm75@4d {
+		compatible = "national,lm75";
+		reg = <0x4d>;
+	};
+};
+
+&i2c8 {
+        status = "okay";
+};
+
+&i2c9 {
+	status = "okay";
+};
+
+&i2c10 {
+	status = "okay";
+};
+
+&i2c11 {
+	status = "okay";
+};
+
+&i2c12 {
+	status = "okay";
+};
+
+&i2c13 {
+	status = "okay";
+};
+
+&pwm {
+	status = "okay";
+};
+
+&peci {
+	status = "okay";
+};
+
+&jtag {
+	status = "okay";
+};
+
