@@ -536,6 +536,7 @@
 				compatible = "aspeed,aspeed2500-jtag";
 				reg = <0x1e6e4000 0x1c>;
 				reg-shift = <2>;
+				clocks = <&clk_apb>;
 				interrupts = <43>;
 				status = "disabled";
 			};

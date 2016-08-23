@@ -2,6 +2,8 @@
 
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/pwm/pwm.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
 #include "aspeed-g5-mlx.dtsi"
 
 / {
@@ -10,9 +12,6 @@
 
 	aliases {
 		serial4 = &uart5;
-	};
-
-        aliases {
                 serial0 = &uart5;
         };
 
@@ -59,6 +58,18 @@
 	pinctrl-0 = <&pinctrl_rgmii2_default>;
 };
 
+&i2c0 {
+        status = "okay";
+};
+
+&i2c1 {
+        status = "okay";
+};
+
+&i2c2 {
+        status = "okay";
+};
+
 &i2c3 {
 	status = "okay";
         eeprom@50 {
@@ -66,6 +77,18 @@
                 reg = <0x50>;
                 pagesize = <16>;
         };
+};
+
+&i2c4 {
+        status = "okay";
+};
+
+&i2c5 {
+        status = "okay";
+};
+
+&i2c6 {
+        status = "okay";
 };
 
 &i2c7 {
@@ -112,11 +135,7 @@
 	status = "okay";
 };
 
-&i2c0 {
-	status = "okay";
-};
-
-&i2c2 {
+&vuart {
 	status = "okay";
 };
 
