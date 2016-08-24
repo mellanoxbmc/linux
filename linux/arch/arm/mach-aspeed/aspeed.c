@@ -11,6 +11,9 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/io.h>
+#include <linux/delay.h>
+#include <linux/pinctrl/machine.h>
+#include <linux/pinctrl/consumer.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -139,6 +142,9 @@ static void __init do_ast2500_common_setup(void)
 	reg = readl(AST_IO(AST_BASE_MAC0 | 0x40));
 	reg &= ~0x80000000;
 	writel(reg, AST_IO(AST_BASE_MAC0 | 0x40));
+
+	writel(readl(AST_IO(AST_BASE_SCU | 0x90)) | (0x1 << 29), AST_IO(AST_BASE_SCU | 0x90));
+	writel((readl(AST_IO(AST_BASE_SCU | 0x94)) & ~(0x3 << 13)) | (0x2 << 13), AST_IO(AST_BASE_SCU | 0x94));
 }
 
 static void __init do_ast2500evb_setup(void)

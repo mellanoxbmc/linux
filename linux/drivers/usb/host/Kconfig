@@ -334,6 +334,12 @@ config USB_OCTEON_EHCI
 	  USB 2.0 device support.  All CN6XXX based chips with USB are
 	  supported.
 
+config USB_EHCI_ASPEED
+        tristate "Support for ASPEED SoC EHCI USB controller"
+        depends on USB_EHCI_HCD && ARCH_ASPEED
+        help
+          Variation of ARC USB block used in some ASPEED SoC chips.
+
 endif # USB_EHCI_HCD
 
 config USB_OXU210HP_HCD
