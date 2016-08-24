@@ -215,13 +215,16 @@ static void ftgmac100_init_hw(struct ftgmac100 *priv)
 				 FTGMAC100_MACCR_RXMAC_EN	| \
 				 FTGMAC100_MACCR_FULLDUP	| \
 				 FTGMAC100_MACCR_CRC_APD	| \
-				 FTGMAC100_MACCR_PHY_LINK_LEVEL | \
 				 FTGMAC100_MACCR_RX_RUNT	| \
 				 FTGMAC100_MACCR_RX_BROADPKT)
 
 static void ftgmac100_start_hw(struct ftgmac100 *priv, int speed)
 {
 	int maccr = MACCR_ENABLE_ALL;
+
+	if (priv->use_ncsi)
+		maccr |= FTGMAC100_MACCR_PHY_LINK_LEVEL;
+
 
 	switch (speed) {
 	default:
