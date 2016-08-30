@@ -120,7 +120,11 @@ static const struct i2c_device_id at24_ids[] = {
 		AT24_FLAG_READONLY | AT24_FLAG_IRUGO) },
 	{ "24c04", AT24_DEVICE_MAGIC(4096 / 8, 0) },
 	/* 24rf08 quirk is handled at i2c-core */
-	{ "24c08", AT24_DEVICE_MAGIC(8192 / 8, 0) },
+	/* 24c08 exhibits a quirk where it will not NACK durring an
+	 * acknowledge poll so we have to send a stop after the dummy write in
+	 * a read.
+	 */
+	{ "24c08", AT24_DEVICE_MAGIC(8192 / 8, AT24_FLAG_STOPPOLL) },
 	{ "24c16", AT24_DEVICE_MAGIC(16384 / 8, 0) },
 	{ "24c32", AT24_DEVICE_MAGIC(32768 / 8, AT24_FLAG_ADDR16) },
 	{ "24c64", AT24_DEVICE_MAGIC(65536 / 8, AT24_FLAG_ADDR16) },
@@ -212,6 +216,12 @@ static ssize_t at24_eeprom_read(struct at24_data *at24, char *buf,
 		msgbuf[i++] = offset;
 
 		msg[0].addr = client->addr;
+		/*
+		 * Some EEPROMs do not perform the acknowledge poll correctly
+		 * and have to send a STOP after the dummy write.
+		 */
+		if (at24->chip.flags & AT24_FLAG_STOPPOLL)
+			msg[0].flags = I2C_M_STOP;
 		msg[0].buf = msgbuf;
 		msg[0].len = i;
 
