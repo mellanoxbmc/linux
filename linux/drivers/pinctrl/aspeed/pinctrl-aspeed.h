@@ -17,7 +17,7 @@
 #include <linux/regmap.h>
 
 /*
- * The ASPEED AST SoCs provide typically more than 200 pins for GPIO and other
+ * The ASPEED SoCs provide typically more than 200 pins for GPIO and other
  * functions. The SoC function enabled on a pin is determined on a priority
  * basis where a given pin can provide a number of different signal types.
  *
@@ -242,6 +242,7 @@
  * further and references registers in the graphics IP block, but that isn't
  * handled yet.
  */
+#define SCU2C           0x2C /* Misc. Control Register */
 #define SCU3C           0x3C /* System Reset Control/Status Register */
 #define SCU48           0x48 /* MAC Interface Clock Delay Setting */
 #define HW_STRAP1       0x70 /* AST2400 strapping is 33 bits, is split */
@@ -279,7 +280,9 @@ struct aspeed_sig_desc {
  * Describes a signal expression. The expression is evaluated by ANDing the
  * evaluation of the descriptors.
  *
- * @signal: The signal name for the priority level on the pin
+ * @signal: The signal name for the priority level on the pin. If the signal
+ *          type is GPIO, then the signal name must begin with the string
+ *          "GPIO", e.g. GPIOA0, GPIOT4 etc.
  * @function: The name of the function the signal participates in for the
  *            associated expression
  * @ndescs: The number of signal descriptors in the expression
@@ -455,7 +458,7 @@ struct aspeed_pin_desc {
 #define FUNC_GROUP_SYM(func) groups_ ## func
 #define FUNC_GROUP_DECL(func, ...) \
 	static const int PIN_GROUP_SYM(func)[] = { __VA_ARGS__ }; \
-	static const char *const FUNC_GROUP_SYM(func)[] = { #func }
+	static const char *FUNC_GROUP_SYM(func)[] = { #func }
 
 /**
  * Declare a single signal pin
@@ -491,6 +494,10 @@ struct aspeed_pin_desc {
 	SIG_EXPR_LIST_DECL_SINGLE(other, other); \
 	MS_PIN_DECL_(pin, SIG_EXPR_LIST_PTR(sig), SIG_EXPR_LIST_PTR(other)); \
 	FUNC_GROUP_DECL(sig, pin)
+
+#define GPIO_PIN_DECL(pin, gpio) \
+	SIG_EXPR_LIST_DECL_SINGLE(gpio, gpio); \
+	MS_PIN_DECL_(pin, SIG_EXPR_LIST_PTR(gpio))
 
 struct aspeed_pinctrl_data {
 	struct regmap *map;
