@@ -48,6 +48,24 @@
 			status = "disabled";
 		};
 
+		ehci0:ehci@1e6a1000 {
+			compatible = "aspeed,ast2500-ehci";
+			reg = <0x1e6a1000 0x90>;
+			interrupts = <5>;
+		};
+
+		ehci1:ehci@1e6a3000 {
+			compatible = "aspeed,ast2500-ehci";
+			reg = <0x1e6a3000 0x90>;
+			interrupts = <13>;
+		};
+
+		uhci0:uhci@1e6b0000 {
+			compatible = "platform-uhci";
+			reg = <0x1e6b0000 0x90>;
+			interrupts = <14>;
+		};
+
 		apb {
 			compatible = "simple-bus";
 			#address-cells = <1>;
@@ -66,6 +84,16 @@
 
 				pinctrl: pinctrl@1e6e2000 {
 					compatible = "aspeed,g5-pinctrl";
+
+					pinctrl_usb1_default: usb1_default {
+						function = "USB1";
+						groups = "USB1";
+					};
+
+					pinctrl_usb2_default: usb2_default {
+						function = "USB2";
+						groups = "USB2";
+					};
 
 					pinctrl_i2c9_default: i2c9_default {
 						function = "I2C9";

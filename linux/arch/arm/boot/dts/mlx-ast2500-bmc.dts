@@ -21,7 +21,7 @@
 	};
 
 	memory {
-		reg = <0x80000000 0x20000000>;
+		reg = <0x80000000 0x20000000>;	/* 512MiB SDRAM DDR4 @ 0x8000_0000 */
 	};
 
 	ahb {
@@ -46,16 +46,26 @@
 
 &mac0 {
 	status = "okay";
-
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_rgmii1_default>;
 };
 
 &mac1 {
 	status = "okay";
-
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_rgmii2_default>;
+};
+
+&ehci0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usb1_default>;
+};
+
+&ehci1 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pinctrl_usb2_default>;
 };
 
 &i2c0 {
