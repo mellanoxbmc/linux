@@ -8,11 +8,11 @@
 
 / {
 	model = "AST2500 EVB";
-	compatible = "mellanox,mlx-bmc", "aspeed,ast2500-evb", "aspeed,ast2500";
+	compatible = "mellanox,mlx-bmc", "aspeed,ast2500";
 
 	aliases {
+		serial0 = &uart1;
 		serial4 = &uart5;
-                serial0 = &uart5;
         };
 
 	chosen {
@@ -41,6 +41,10 @@
 };
 
 &uart5 {
+	status = "okay";
+};
+
+&uart1 {
 	status = "okay";
 };
 

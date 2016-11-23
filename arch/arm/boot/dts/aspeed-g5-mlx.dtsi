@@ -229,6 +229,38 @@
 						function = "RMII2";
 						groups = "RMII2";
 					};
+					pinctrl_txd1_default: txd1_default {
+						function = "TXD1";
+						groups = "TXD1";
+					};
+					pinctrl_rxd1_default: rxd1_default {
+						function = "RXD1";
+						groups = "RXD1";
+					};
+					pinctrl_nrts1_default: nrts1_default {
+						function = "NRTS1";
+						groups = "NRTS1";
+					};
+					pinctrl_ndtr1_default: ndtr1_default {
+						function = "NDTR1";
+						groups = "NDTR1";
+					};
+					pinctrl_nri1_default: nri1_default {
+						function = "NRI1";
+						groups = "NRI1";
+					};
+					pinctrl_ndsr1_default: ndsr1_default {
+						function = "NDSR1";
+						groups = "NDSR1";
+					};
+					pinctrl_ndcd1_default: ndcd1_default {
+						function = "NDCD1";
+						groups = "NDCD1";
+					};
+					pinctrl_ncts1_default: ncts1_default {
+						function = "NCTS1";
+						groups = "NCTS1";
+					};
 				};
 			};
 

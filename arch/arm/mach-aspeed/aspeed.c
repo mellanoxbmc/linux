@@ -164,6 +164,20 @@ static void __init do_witherspoon_setup(void)
 	do_ast2500_common_setup();
 }
 
+static void __init do_mlx_setup(void)
+{
+	unsigned long reg;
+
+	do_ast2500_common_setup();
+
+	/* Set strap to RGMII for dedicated PHY networking */
+	reg = readl(AST_IO(AST_BASE_SCU | 0x70));
+	reg |= BIT(6) | BIT(7);
+	writel(reg, AST_IO(AST_BASE_SCU | 0x70));
+
+	/* Disable UART1 Reset from LPC */
+	writel(0x00000A00, AST_IO(AST_BASE_LPC | 0x98));
+}
 
 #define SCU_PASSWORD	0x1688A8A8
 
@@ -208,6 +222,8 @@ static void __init aspeed_init_early(void)
 		do_ast2500evb_setup();
 	if (of_machine_is_compatible("ibm,witherspoon-bmc"))
 		do_witherspoon_setup();
+	if (of_machine_is_compatible("mellanox,mlx-bmc"))
+		do_mlx_setup();
 }
 
 static void __init aspeed_map_io(void)
