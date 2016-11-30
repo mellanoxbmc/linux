@@ -5,10 +5,12 @@
 				u-boot {
 					reg = < 0 0x60000 >;
 					label = "u-boot";
+					read-only;
 				};
 				u-boot-env {
 					reg = < 0x60000 0x10000>;
 					label = "u-boot-env";
+					read-only;
 				};
 				kernel  {
 					reg = < 0x70000 0x280000 >;

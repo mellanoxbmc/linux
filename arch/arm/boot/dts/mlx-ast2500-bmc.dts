@@ -153,3 +153,7 @@
 	status = "okay";
 };
 
+&bt {
+	status = "okay";
+	pinctrl-0 = <&pinctrl_lpc_default>;
+};
