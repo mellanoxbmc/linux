@@ -155,6 +155,70 @@
 						groups = "I2C8";
 					};
 
+					pinctrl_lad0_default: lad0_default {
+						function = "LAD0";
+						groups = "LAD0";
+					};
+
+					pinctrl_lad1_default: lad1_default {
+						function = "LAD1";
+						groups = "LAD1";
+					};
+
+					pinctrl_lad2_default: lad2_default {
+						function = "LAD2";
+						groups = "LAD2";
+					};
+
+					pinctrl_lad3_default: lad3_default {
+						function = "LAD3";
+						groups = "LAD3";
+					};
+
+					pinctrl_lclk_default: lclk_default {
+						function = "LCLK";
+						groups = "LCLK";
+					};
+
+					pinctrl_lframe_default: lframe_default {
+						function = "LFRAME";
+						groups = "LFRAME";
+					};
+
+					pinctrl_lpchc_default: lpchc_default {
+						function = "LPCHC";
+						groups = "LPCHC";
+					};
+
+					pinctrl_lpcpd_default: lpcpd_default {
+						function = "LPCPD";
+						groups = "LPCPD";
+					};
+
+					pinctrl_lpcpme_default: lpcpme_default {
+						function = "LPCPME";
+						groups = "LPCPME";
+					};
+
+					pinctrl_lpcrst_default: lpcrst_default {
+						function = "LPCRST";
+						groups = "LPCRST";
+					};
+
+					pinctrl_lpcsmi_default: lpcsmi_default {
+						function = "LPCSMI";
+						groups = "LPCSMI";
+					};
+
+					pinctrl_lsirq_default: lsirq_default {
+						function = "LSIRQ";
+						groups = "LSIRQ";
+					};
+
+					pinctrl_lpc_default: lpc_default {
+						function = "LPC";
+						groups = "LPC";
+					};
 					pinctrl_pwm0_default: pwm0_default {
 						function = "PWM0";
 						groups = "PWM0";
@@ -319,6 +383,15 @@
 				compatible = "aspeed,bt-host";
 				reg = <0x1e789140 0x18>;
 				interrupts = <8>;
+			};
+
+			bt: bt-device@1e789000 {
+				compatible = "aspeed,bt-device";
+				reg = <0x1e789000 0x260>;
+				clocks = <&clk_apb>;
+				interrupts = <8>;
+				addr = <0x2702>;
+				status = "disabled";
 			};
 
 			wdt1: wdt@1e785000 {
@@ -604,7 +677,6 @@
 				interrupts = <28>;
 				status = "disabled";
 			};
-
 
 			peci: peci@1e78b000 {
 				#address-cells = <1>;
