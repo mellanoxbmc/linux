@@ -141,19 +141,10 @@
 	status = "okay";
 };
 
-&peci {
-	status = "okay";
-};
-
 &jtag {
 	status = "okay";
 };
 
 &vuart {
 	status = "okay";
-};
-
-&bt {
-	status = "okay";
-	pinctrl-0 = <&pinctrl_lpc_default>;
 };

@@ -380,18 +380,10 @@
 			};
 
 			ibt: ibt@1e789140 {
-				compatible = "aspeed,bt-host";
+				compatible = "aspeed,ast2500-ibt-bmc";
 				reg = <0x1e789140 0x18>;
 				interrupts = <8>;
-			};
-
-			bt: bt-device@1e789000 {
-				compatible = "aspeed,bt-device";
-				reg = <0x1e789000 0x260>;
-				clocks = <&clk_apb>;
-				interrupts = <8>;
-				addr = <0x2702>;
-				status = "disabled";
+				addr = <0x2700>;
 			};
 
 			wdt1: wdt@1e785000 {
