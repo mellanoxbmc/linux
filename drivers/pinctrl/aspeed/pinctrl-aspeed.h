@@ -232,6 +232,15 @@
  * group.
  */
 
+#define ASPEED_IP_SCU	0
+#define ASPEED_IP_SIO	1
+#define ASPEED_IP_GFX	2
+#define ASPEED_IP_LPC	3
+
+#define SIG_DESC_TO_REG(ip, offset)	(((ip) << 24) | (offset))
+#define SIG_DESC_IP_FROM_REG(reg)	(((reg) >> 24) & GENMASK(7, 0))
+#define SIG_DESC_OFFSET_FROM_REG(reg)	((reg) & GENMASK(11, 0))
+
 /*
  * The "Multi-function Pins Mapping and Control" table in the SoC datasheet
  * references registers by the device/offset mnemonic. The register macros
@@ -246,6 +255,7 @@
 #define SCU3C           0x3C /* System Reset Control/Status Register */
 #define SCU48           0x48 /* MAC Interface Clock Delay Setting */
 #define HW_STRAP1       0x70 /* AST2400 strapping is 33 bits, is split */
+#define HW_STRAP1_CLEAR 0x7C /* Bits written 1 to are cleared from HW_STRAP1 */
 #define SCU80           0x80 /* Multi-function Pin Control #1 */
 #define SCU84           0x84 /* Multi-function Pin Control #2 */
 #define SCU88           0x88 /* Multi-function Pin Control #3 */
@@ -258,11 +268,16 @@
 #define SCUAC           0xAC /* Multi-function Pin Control #10 */
 #define HW_STRAP2       0xD0 /* Strapping */
 
+#define SIORD30		SIG_DESC_TO_REG(ASPEED_IP_SIO, 0x30)
+
  /**
   * A signal descriptor, which describes the register, bits and the
   * enable/disable values that should be compared or written.
   *
-  * @reg: The register offset from base in bytes
+  * @reg: Split into three fields:
+  *       31:24: IP selector
+  *       23:12: Reserved
+  *       11:0: Register offset
   * @mask: The mask to apply to the register. The lowest set bit of the mask is
   *        used to derive the shift value.
   * @enable: The value that enables the function. Value should be in the LSBs,
@@ -271,7 +286,7 @@
   *           LSBs, not at the position of the mask.
   */
 struct aspeed_sig_desc {
-	unsigned int reg;
+	u32 reg;
 	u32 mask;
 	u32 enable;
 	u32 disable;
@@ -566,5 +581,4 @@ int aspeed_gpio_request_enable(struct pinctrl_dev *pctldev,
 int aspeed_pinctrl_probe(struct platform_device *pdev,
 		struct pinctrl_desc *pdesc,
 		struct aspeed_pinctrl_data *pdata);
-
 #endif /* PINCTRL_ASPEED */
