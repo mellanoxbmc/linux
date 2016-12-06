@@ -215,16 +215,13 @@ static void ftgmac100_init_hw(struct ftgmac100 *priv)
 				 FTGMAC100_MACCR_RXMAC_EN	| \
 				 FTGMAC100_MACCR_FULLDUP	| \
 				 FTGMAC100_MACCR_CRC_APD	| \
+				 FTGMAC100_MACCR_PHY_LINK_LEVEL | \
 				 FTGMAC100_MACCR_RX_RUNT	| \
 				 FTGMAC100_MACCR_RX_BROADPKT)
 
 static void ftgmac100_start_hw(struct ftgmac100 *priv, int speed)
 {
 	int maccr = MACCR_ENABLE_ALL;
-
-	if (priv->use_ncsi)
-		maccr |= FTGMAC100_MACCR_PHY_LINK_LEVEL;
-
 
 	switch (speed) {
 	default:
@@ -1077,14 +1074,12 @@ static int ftgmac100_poll(struct napi_struct *napi, int budget)
 	}
 
 	if (status & priv->int_mask_all & (FTGMAC100_INT_NO_RXBUF |
-			FTGMAC100_INT_RPKT_LOST | FTGMAC100_INT_AHB_ERR |
-			FTGMAC100_INT_PHYSTS_CHG)) {
+			FTGMAC100_INT_RPKT_LOST | FTGMAC100_INT_AHB_ERR)) {
 		if (net_ratelimit())
-			netdev_info(netdev, "[ISR] = 0x%x: %s%s%s%s\n", status,
+			netdev_info(netdev, "[ISR] = 0x%x: %s%s%s\n", status,
 				    status & FTGMAC100_INT_NO_RXBUF ? "NO_RXBUF " : "",
 				    status & FTGMAC100_INT_RPKT_LOST ? "RPKT_LOST " : "",
-				    status & FTGMAC100_INT_AHB_ERR ? "AHB_ERR " : "",
-				    status & FTGMAC100_INT_PHYSTS_CHG ? "PHYSTS_CHG" : "");
+				    status & FTGMAC100_INT_AHB_ERR ? "AHB_ERR " : "");
 
 		if (status & FTGMAC100_INT_NO_RXBUF) {
 			/* RX buffer unavailable */
@@ -1194,6 +1189,8 @@ static int ftgmac100_stop(struct net_device *netdev)
 	napi_disable(&priv->napi);
 	if (netdev->phydev)
 		phy_stop(netdev->phydev);
+	else if (priv->use_ncsi)
+		ncsi_stop_dev(priv->ndev);
 
 	ftgmac100_stop_hw(priv);
 	free_irq(priv->irq, netdev);
@@ -1254,11 +1251,20 @@ static int ftgmac100_setup_mdio(struct net_device *netdev)
 	struct ftgmac100 *priv = netdev_priv(netdev);
 	struct platform_device *pdev = to_platform_device(priv->dev);
 	int i, err = 0;
+	u32 reg;
 
 	/* initialize mdio bus */
 	priv->mii_bus = mdiobus_alloc();
 	if (!priv->mii_bus)
 		return -EIO;
+
+	if (of_machine_is_compatible("aspeed,ast2400") ||
+	    of_machine_is_compatible("aspeed,ast2500")) {
+		/* This driver supports the old MDIO interface */
+		reg = ioread32(priv->base + FTGMAC100_OFFSET_REVR);
+		reg &= ~FTGMAC100_REVR_NEW_MDIO_INTERFACE;
+		iowrite32(reg, priv->base + FTGMAC100_OFFSET_REVR);
+	};
 
 	priv->mii_bus->name = "ftgmac100_mdio";
 	snprintf(priv->mii_bus->id, MII_BUS_ID_SIZE, "%s-%d",
@@ -1392,7 +1398,6 @@ static int ftgmac100_probe(struct platform_device *pdev)
 			      FTGMAC100_INT_XPKT_ETH |
 			      FTGMAC100_INT_XPKT_LOST |
 			      FTGMAC100_INT_AHB_ERR |
-			      FTGMAC100_INT_PHYSTS_CHG |
 			      FTGMAC100_INT_RPKT_BUF |
 			      FTGMAC100_INT_NO_RXBUF);
 	if (pdev->dev.of_node &&
@@ -1404,7 +1409,6 @@ static int ftgmac100_probe(struct platform_device *pdev)
 
 		dev_info(&pdev->dev, "Using NCSI interface\n");
 		priv->use_ncsi = true;
-		priv->int_mask_all &= ~FTGMAC100_INT_PHYSTS_CHG;
 		priv->ndev = ncsi_register_dev(netdev, ftgmac100_ncsi_handler);
 		if (!priv->ndev)
 			goto err_ncsi_dev;
