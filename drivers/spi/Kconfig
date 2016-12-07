@@ -59,6 +59,18 @@ config SPI_ALTERA
 	help
 	  This is the driver for the Altera SPI Controller.
 
+config SPI_ASPEED
+	tristate "Aspeed AST24XX/AST25XX SPI controller driver"
+	depends on ARCH_ASPEED
+	help
+	  This enables support for the SPI controller on the Aspeed AST25XX SoCs
+	  as a generic SPI master.
+
+	  The Aspeed AST25XX SoCs have three SPI controllers intended as SPI
+	  flash controllers; nevertheless, they are flexible enough to support
+	  the Linux SPI master framework and are physically capable of
+	  supporting some other SPI devices.
+
 config SPI_ATH79
 	tristate "Atheros AR71XX/AR724X/AR913X SPI controller driver"
 	depends on ATH79 && GPIOLIB

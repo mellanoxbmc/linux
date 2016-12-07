@@ -1219,6 +1219,7 @@ CONFIG_SPI_MASTER=y
 # SPI Master Controller Drivers
 #
 # CONFIG_SPI_ALTERA is not set
+CONFIG_SPI_ASPEED=y
 # CONFIG_SPI_AXI_SPI_ENGINE is not set
 # CONFIG_SPI_BITBANG is not set
 # CONFIG_SPI_CADENCE is not set

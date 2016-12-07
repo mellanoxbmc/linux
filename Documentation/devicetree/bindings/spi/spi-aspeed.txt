@@ -1,0 +1,33 @@
+Device tree configuration for the generic Aspeed AST25XX SoC SPI controllers.
+
+Required Properties:
+	- #address-cells	: should be 1
+	- #size-cells		: should be 0
+	- compatible		: should be "aspeed,ast2500-spi"
+	- reg			: address ranges for the control registers
+				    and IO ports. There is one IO port window
+				    for each chip select.
+	- interrupts		: interrupt number
+
+Example:
+
+	spi1: spi@1e630000 {
+		compatible = "aspeed,ast2500-spi";
+		reg = <0x1e630000 0xc1 0x30000000 0x02000000 0x36000000 0x02000000>;
+		interrupts = <59>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "disabled";
+		flash@0 {
+			reg = <0>; /* chip select number */
+			compatible = "jedec,spi-nor";
+			spi-max-frequency = <100000000>;
+			status = "disabled";
+		};
+		flash@1 {
+			reg = <1>; /* chip select number */
+			compatible = "jedec,spi-nor";
+			spi-max-frequency = <100000000>;
+			status = "disabled";
+		};
+	};
