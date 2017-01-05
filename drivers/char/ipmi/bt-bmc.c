@@ -467,15 +467,12 @@ static int bt_bmc_probe(struct platform_device *pdev)
 	addr_prop = of_get_property(pdev->dev.of_node, "addr", NULL);
 	if (addr_prop) {
 		addr = be32_to_cpup(addr_prop);
-		dev_info(&pdev->dev,
-		"bt address was successfully set to 0x%x.\n", addr);
 	} else {
 		addr = BT_DEF_IO_BASE;
-		dev_warn(&pdev->dev,
-			"bt address wasn't specified in the device tree "
-			"(using default 0x%x).\n",
-			BT_DEF_IO_BASE);
 	}
+
+	dev_info(&pdev->dev,
+		"bt address was successfully set to 0x%x.\n", addr);
 
 	iowrite32((addr << BT_CR0_IO_BASE) |
 		  (BT_IRQ << BT_CR0_IRQ) |
