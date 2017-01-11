@@ -373,7 +373,7 @@ aspeed_pwm_tacho_read(struct aspeed_pwm_tacho_data *aspeed_pwm_tacho, u32 reg)
  * 0x1e786008 D[15:0] = 0x0000, duty = 100%
  * (falling) - (rising+1) /unit
  */
-static void aspeed_pwm_taco_init(void)
+static void aspeed_pwm_tacho_init(void)
 {
 	/* Enable PWM TACH CLK
 	 * Set M/N/O out is 25Khz
@@ -1043,7 +1043,7 @@ aspeed_set_tacho_source(struct aspeed_pwm_tacho_data *aspeed_pwm_tacho,
 
 }
 
-static u32
+static s32
 aspeed_get_tacho_rpm(struct aspeed_pwm_tacho_data *aspeed_pwm_tacho,
 		     u8 tacho_ch)
 {
@@ -1051,7 +1051,7 @@ aspeed_get_tacho_rpm(struct aspeed_pwm_tacho_data *aspeed_pwm_tacho,
 	u8 tacho_source, pwm_type, tacho_type_en;
 
 	if (!(aspeed_get_tacho_en(aspeed_pwm_tacho, tacho_ch)))
-		return 0;
+		return -EPERM;
 
 	aspeed_pwm_tacho_write(aspeed_pwm_tacho, 0, AST_PTCR_TRIGGER);
 	aspeed_pwm_tacho_write(aspeed_pwm_tacho, 0x1 << tacho_ch,
@@ -1063,14 +1063,14 @@ aspeed_get_tacho_rpm(struct aspeed_pwm_tacho_data *aspeed_pwm_tacho,
 
 	/* check pwm_type and get clock division */
 	if (!tacho_type_en)
-		return 0;
+		return -EPERM;
 
 	/* Wait ready */
 	while (!(aspeed_pwm_tacho_read(aspeed_pwm_tacho, AST_PTCR_RESULT) &
 		(0x1 << RESULT_STATUS))) {
 		timeout++;
 		if (timeout > 25)
-			return 0;
+			return -ETIMEDOUT;
 	};
 
 	raw_data = aspeed_pwm_tacho_read(aspeed_pwm_tacho, AST_PTCR_RESULT) &
@@ -2294,9 +2294,14 @@ aspeed_show_tacho_speed(struct device *dev, struct device_attribute *attr,
 						       sensor_attr->index));
 
 	case 2: /* rpm */
-		return sprintf(buf, "%d \n",
-			       aspeed_get_tacho_rpm(aspeed_pwm_tacho,
-						    sensor_attr->index));
+		{
+			const s32 rpm = aspeed_get_tacho_rpm(aspeed_pwm_tacho,
+				sensor_attr->index);
+
+			if (rpm < 0)
+				return rpm;
+			return sprintf(buf, "%d\n", rpm);
+		}
 
 	case 3: /* alarm */
 		return sprintf(buf, "%d \n",
@@ -2661,7 +2666,7 @@ aspeed_pwm_tacho_probe(struct platform_device *pdev)
 	/* SCU PWM CTRL Reset */
 	aspeed_toggle_scu_reset(SCU_RESET_PWM, 3);
 
-	aspeed_pwm_taco_init();
+	aspeed_pwm_tacho_init();
 
 	dev_info(&pdev->dev, "aspeed pwm tacho: driver successfully loaded.\n");
 
@@ -2702,7 +2707,7 @@ aspeed_pwm_tacho_suspend(struct platform_device *pdev, pm_message_t state)
 static int
 aspeed_pwm_tacho_resume(struct platform_device *pdev)
 {
-	aspeed_pwm_taco_init();
+	aspeed_pwm_tacho_init();
 	return 0;
 }
 
