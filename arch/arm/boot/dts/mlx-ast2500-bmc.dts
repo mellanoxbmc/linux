@@ -62,14 +62,10 @@
 
 &ehci0 {
 	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_usb1_default>;
 };
 
 &ehci1 {
 	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_usb2_default>;
 };
 
 &i2c0 {

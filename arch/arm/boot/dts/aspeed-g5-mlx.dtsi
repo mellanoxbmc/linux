@@ -165,16 +165,6 @@
 						groups = "FWSPICS2";
 					};
 
-					pinctrl_usb1_default: usb1_default {
-						function = "USB1";
-						groups = "USB1";
-					};
-
-					pinctrl_usb2_default: usb2_default {
-						function = "USB2";
-						groups = "USB2";
-					};
-
 					pinctrl_i2c9_default: i2c9_default {
 						function = "I2C9";
 						groups = "I2C9";
@@ -198,6 +188,11 @@
 					pinctrl_i2c13_default: i2c13_default {
 						function = "I2C13";
 						groups = "I2C13";
+					};
+
+					pinctrl_usbcki_default: usbcki_default {
+						function = "USBCKI";
+						groups = "USBCKI";
 					};
 
 					pinctrl_gpid0_default: gpid0_default {
