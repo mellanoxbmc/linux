@@ -51,8 +51,8 @@
 
 &mac0 {
 	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&pinctrl_rgmii1_default>;
+	use-ncsi;
+	no-hw-checksum;
 };
 
 &mac1 {

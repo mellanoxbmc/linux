@@ -1311,11 +1311,15 @@ static void ftgmac100_destroy_mdio(struct net_device *netdev)
 
 static void ftgmac100_ncsi_handler(struct ncsi_dev *nd)
 {
+	static int link_up = 0;
 	if (unlikely(nd->state != ncsi_dev_state_functional))
 		return;
 
-	netdev_info(nd->dev, "NCSI interface %s\n",
-		    nd->link_up ? "up" : "down");
+	if (nd->link_up != link_up) {
+		link_up = nd->link_up;
+		netdev_info(nd->dev, "NCSI interface %s\n",
+			    nd->link_up ? "up" : "down");
+	}
 }
 
 /******************************************************************************
