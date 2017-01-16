@@ -4,6 +4,7 @@
 #include <dt-bindings/pwm/pwm.h>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/gpio/aspeed-gpio.h>
 #include "aspeed-g5-mlx.dtsi"
 
 / {
@@ -87,6 +88,226 @@
                 reg = <0x50>;
                 pagesize = <16>;
         };
+
+	mlxcpld-ctrl@71 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "mellanox,mlxcpld-ctrl";
+		reg = <0x71>;
+		top_aggr_offset = <0x3a>;
+		top_aggr_mask = <0x48>;
+		top_aggr_irq = <174>;
+		interrupt-parent = <&gpio>;
+		gpios-signal = <&gpio ASPEED_GPIO(S, 1)>;
+
+		psu {
+			aggr_mask = <0x08>;
+			reg = <0x58>;
+			mask = <0x03>;
+
+			psu1_eeprom {
+				type = "24c02";
+				bus = <0x04>;
+				addr = <0x51>;
+			};
+
+			psu2_eeprom {
+				type = "24c02";
+				bus = <0x04>;
+				addr = <0x50>;
+			};
+		};
+
+		pwr {
+			aggr_mask = <0x08>;
+			reg = <0x64>;
+			mask = <0x03>;
+
+			psu1_contoller {
+				type = "dps460";
+				bus = <0x04>;
+				addr = <0x59>;
+			};
+
+			psu2_contoller {
+				type = "dps460";
+				bus = <0x04>;
+				addr = <0x58>;
+			};
+		};
+
+		fan {
+			aggr_mask = <0x40>;
+			reg = <0x88>;
+			mask = <0x0f>;
+
+			fan1_eeprom {
+				type = "24c32";
+				bus = <0x0f>;
+				addr = <0x50>;
+			};
+
+			fan2_eeprom {
+				type = "24c32";
+				bus = <0x10>;
+				addr = <0x50>;
+			};
+
+			fan3_eeprom {
+				type = "24c32";
+				bus = <0x11>;
+				addr = <0x50>;
+			};
+
+			fan4_eeprom {
+				type = "24c32";
+				bus = <0x12>;
+				addr = <0x50>;
+			};
+		};
+
+		reset {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reset1 {
+				label = "bmc_reset_soft";
+				reg = <0x17>;
+				mask = <0xfe>;
+			};
+
+			reset2 {
+				label = "system_reset_hard";
+				reg = <0x17>;
+				mask = <0xfd>;
+			};
+
+			reset3 {
+				label = "cpu_reset_soft";
+				reg = <0x17>;
+				mask = <0xfb>;
+			};
+
+			reset4 {
+				label = "cpu_reset_hard";
+				reg = <0x17>;
+				mask = <0xf7>;
+			};
+
+			reset5 {
+				label = "cpu_reset_go";
+				reg = <0x17>;
+				mask = <0xef>;
+			};
+		};
+
+		cause {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			cause1 {
+				label = "ac_power_cycle";
+				reg = <0x1d>;
+				mask = <0xfe>;
+			};
+
+			cause2 {
+				label = "dc_power_cycle";
+				reg = <0x1d>;
+				mask = <0xfd>;
+			};
+
+			cause3 {
+				label = "cpu_power_down";
+				reg = <0x1d>;
+				mask = <0xfb>;
+			};
+
+			cause4 {
+				label = "cpu_reboot";
+				reg = <0x1d>;
+				mask = <0xf7>;
+			};
+
+			cause5 {
+				label = "cpu_shutdown";
+				reg = <0x1d>;
+				mask = <0xef>;
+			};
+
+			cause6 {
+				label = "cpu_watchdog";
+				reg = <0x1d>;
+				mask = <0xef>;
+			};
+
+			cause7 {
+				label = "cpu_kernel_panic";
+				reg = <0x1d>;
+				mask = <0xef>;
+			};
+
+			cause8 {
+				label = "bmc_warm_reset";
+				reg = <0x71>;
+				mask = <0xfe>;
+			};
+
+			cause9 {
+				label = "bmc_upgrade";
+				reg = <0x71>;
+				mask = <0xfd>;
+			};
+		};
+
+		mux {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			mux1 {
+				label = "system_uart";
+				reg = <0x33>;
+				mask = <0xf9>;
+				bit = <0x00>;
+			};
+
+			mux2 {
+				label = "sol_uart";
+				reg = <0x33>;
+				mask = <0xfa>;
+				bit = <0x01>;
+			};
+
+			mux3 {
+				label = "bmc_uart";
+				reg = <0x33>;
+				mask = <0xfc>;
+				bit = <0x02>;
+			};
+		};
+
+		led {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			led1 {
+				label = "fan1:green";
+				reg = <0x21>;
+				mask = <0xf0>;
+			};
+			led2 {
+				label = "fan1:red";
+				reg = <0x21>;
+				mask = <0xf0>;
+			};
+			led3 {
+				label = "psu:green";
+				reg = <0x20>;
+				mask = <0x0F>;
+			};
+			led4 {
+				label = "psu:red";
+				reg = <0x20>;
+				mask = <0x0F>;
+			};
+		};
+	};
 };
 
 &i2c4 {

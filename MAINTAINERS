@@ -7449,6 +7449,11 @@ W:	http://www.mellanox.com
 Q:	http://patchwork.ozlabs.org/project/netdev/list/
 F:	drivers/net/ethernet/mellanox/mlxsw/
 
+MELLANOX MLXCPLD CONTROL DRIVER
+M:      Vadim Pasternak <vadimp@mellanox.com>
+S:      Supported
+F:      drivers/misc/mlxcpld-ctrl.c
+
 MEMBARRIER SUPPORT
 M:	Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
 M:	"Paul E. McKenney" <paulmck@linux.vnet.ibm.com>

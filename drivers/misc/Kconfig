@@ -508,6 +508,16 @@ config LATTICE_ECP3_CONFIG
 
 	  If unsure, say N.
 
+config MLXCPLD_CTRL
+	tristate "Mellanox BMC CPLD Hardware Control"
+	depends on I2C
+	help
+	  Say Y here to include support for the Mellanox BMC
+	  hardware control.
+
+	  This driver can also be built as a module. If so the module
+	  will be called mlxcpld-ctrl.
+
 config SRAM
 	bool "Generic on-chip SRAM driver"
 	depends on HAS_IOMEM

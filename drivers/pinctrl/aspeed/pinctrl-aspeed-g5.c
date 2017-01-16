@@ -492,6 +492,9 @@ SIG_EXPR_LIST_DECL_SINGLE(SPI2CS1, SPI2CS1, V20_DESC);
 MS_PIN_DECL(V20, GPIOS0, VPOB2, SPI2CS1);
 FUNC_GROUP_DECL(SPI2CS1, V20);
 
+#define U19 145
+GPIO_PIN_DECL(U19, GPIOS1);
+
 /* RGMII1/RMII1 */
 
 #define RMII1_DESC      SIG_DESC_BIT(HW_STRAP1, 6, 0)
@@ -937,6 +940,7 @@ static struct pinctrl_pin_desc aspeed_g5_pins[ASPEED_G5_NR_PINS] = {
 	ASPEED_PINCTRL_PIN(T2),
 	ASPEED_PINCTRL_PIN(P3),
 	ASPEED_PINCTRL_PIN(P4),
+	ASPEED_PINCTRL_PIN(U19),
 };
 
 static const struct aspeed_pin_group aspeed_g5_groups[] = {
