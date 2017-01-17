@@ -1,9 +1,7 @@
 /*
- * drivers/net/ethernet/mellanox/mlxsw/port.h
- * Copyright (c) 2015 Mellanox Technologies. All rights reserved.
- * Copyright (c) 2015 Elad Raz <eladr@mellanox.com>
- * Copyright (c) 2015 Jiri Pirko <jiri@mellanox.com>
- * Copyright (c) 2015 Ido Schimmel <idosch@mellanox.com>
+ * drivers/net/ethernet/mellanox/mlxsw/spectrum_kvdl.c
+ * Copyright (c) 2016 Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2016 Jiri Pirko <jiri@mellanox.com>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -33,50 +31,61 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef _MLXSW_PORT_H
-#define _MLXSW_PORT_H
 
-#include <linux/types.h>
+#include <linux/kernel.h>
+#include <linux/bitops.h>
 
-#define MLXSW_PORT_MAX_MTU		10000
+#include "spectrum.h"
 
-#define MLXSW_PORT_DEFAULT_VID		1
+#define MLXSW_SP_KVDL_SINGLE_BASE 0
+#define MLXSW_SP_KVDL_SINGLE_SIZE 16384
+#define MLXSW_SP_KVDL_CHUNKS_BASE \
+	(MLXSW_SP_KVDL_SINGLE_BASE + MLXSW_SP_KVDL_SINGLE_SIZE)
+#define MLXSW_SP_KVDL_CHUNKS_SIZE \
+	(MLXSW_SP_KVD_LINEAR_SIZE - MLXSW_SP_KVDL_CHUNKS_BASE)
+#define MLXSW_SP_CHUNK_MAX 32
 
-#define MLXSW_PORT_SWID_DISABLED_PORT	255
-#define MLXSW_PORT_SWID_ALL_SWIDS	254
-#define MLXSW_PORT_SWID_TYPE_IB		1
-#define MLXSW_PORT_SWID_TYPE_ETH	2
+int mlxsw_sp_kvdl_alloc(struct mlxsw_sp *mlxsw_sp, unsigned int entry_count)
+{
+	int entry_index;
+	int size;
+	int type_base;
+	int type_size;
+	int type_entries;
 
-#define MLXSW_PORT_MID			0xd000
+	if (entry_count == 0 || entry_count > MLXSW_SP_CHUNK_MAX) {
+		return -EINVAL;
+	} else if (entry_count == 1) {
+		type_base = MLXSW_SP_KVDL_SINGLE_BASE;
+		type_size = MLXSW_SP_KVDL_SINGLE_SIZE;
+		type_entries = 1;
+	} else {
+		type_base = MLXSW_SP_KVDL_CHUNKS_BASE;
+		type_size = MLXSW_SP_KVDL_CHUNKS_SIZE;
+		type_entries = MLXSW_SP_CHUNK_MAX;
+	}
 
-#define MLXSW_PORT_MAX_PHY_PORTS	0x40
-#define MLXSW_PORT_MAX_PORTS		(MLXSW_PORT_MAX_PHY_PORTS + 1)
+	entry_index = type_base;
+	size = type_base + type_size;
+	for_each_clear_bit_from(entry_index, mlxsw_sp->kvdl.usage, size) {
+		int i;
 
-#define MLXSW_PORT_MAX_IB_PHY_PORTS	36
-#define MLXSW_PORT_MAX_IB_PORTS		(MLXSW_PORT_MAX_IB_PHY_PORTS + 1)
+		for (i = 0; i < type_entries; i++)
+			set_bit(entry_index + i, mlxsw_sp->kvdl.usage);
+		return entry_index;
+	}
+	return -ENOBUFS;
+}
 
-#define MLXSW_PORT_DEVID_BITS_OFFSET	10
-#define MLXSW_PORT_PHY_BITS_OFFSET	4
-#define MLXSW_PORT_PHY_BITS_MASK	(MLXSW_PORT_MAX_PHY_PORTS - 1)
+void mlxsw_sp_kvdl_free(struct mlxsw_sp *mlxsw_sp, int entry_index)
+{
+	int type_entries;
+	int i;
 
-#define MLXSW_PORT_CPU_PORT		0x0
-#define MLXSW_PORT_ROUTER_PORT		(MLXSW_PORT_MAX_PHY_PORTS + 2)
-
-#define MLXSW_PORT_DONT_CARE		(MLXSW_PORT_MAX_PORTS)
-
-#define MLXSW_PORT_MODULE_MAX_WIDTH	4
-
-enum mlxsw_port_admin_status {
-	MLXSW_PORT_ADMIN_STATUS_UP = 1,
-	MLXSW_PORT_ADMIN_STATUS_DOWN = 2,
-	MLXSW_PORT_ADMIN_STATUS_UP_ONCE = 3,
-	MLXSW_PORT_ADMIN_STATUS_DISABLED = 4,
-};
-
-enum mlxsw_reg_pude_oper_status {
-	MLXSW_PORT_OPER_STATUS_UP = 1,
-	MLXSW_PORT_OPER_STATUS_DOWN = 2,
-	MLXSW_PORT_OPER_STATUS_FAILURE = 4,	/* Can be set to up again. */
-};
-
-#endif /* _MLXSW_PORT_H */
+	if (entry_index < MLXSW_SP_KVDL_CHUNKS_BASE)
+		type_entries = 1;
+	else
+		type_entries = MLXSW_SP_CHUNK_MAX;
+	for (i = 0; i < type_entries; i++)
+		clear_bit(entry_index + i, mlxsw_sp->kvdl.usage);
+}

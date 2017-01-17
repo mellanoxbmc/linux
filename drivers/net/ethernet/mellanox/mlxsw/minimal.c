@@ -1,9 +1,7 @@
 /*
- * drivers/net/ethernet/mellanox/mlxsw/port.h
- * Copyright (c) 2015 Mellanox Technologies. All rights reserved.
- * Copyright (c) 2015 Elad Raz <eladr@mellanox.com>
- * Copyright (c) 2015 Jiri Pirko <jiri@mellanox.com>
- * Copyright (c) 2015 Ido Schimmel <idosch@mellanox.com>
+ * drivers/net/ethernet/mellanox/mlxsw/minimal.c
+ * Copyright (c) 2016 Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2016 Vadim Pasternak <vadimp@mellanox.com>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -33,50 +31,67 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef _MLXSW_PORT_H
-#define _MLXSW_PORT_H
 
+#include <linux/i2c.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/mod_devicetable.h>
 #include <linux/types.h>
 
-#define MLXSW_PORT_MAX_MTU		10000
+#include "core.h"
+#include "i2c.h"
 
-#define MLXSW_PORT_DEFAULT_VID		1
+static const char mlxsw_minimal_driver_name[] = "mlxsw_minimal";
 
-#define MLXSW_PORT_SWID_DISABLED_PORT	255
-#define MLXSW_PORT_SWID_ALL_SWIDS	254
-#define MLXSW_PORT_SWID_TYPE_IB		1
-#define MLXSW_PORT_SWID_TYPE_ETH	2
+static const struct mlxsw_config_profile mlxsw_minimal_config_profile;
 
-#define MLXSW_PORT_MID			0xd000
-
-#define MLXSW_PORT_MAX_PHY_PORTS	0x40
-#define MLXSW_PORT_MAX_PORTS		(MLXSW_PORT_MAX_PHY_PORTS + 1)
-
-#define MLXSW_PORT_MAX_IB_PHY_PORTS	36
-#define MLXSW_PORT_MAX_IB_PORTS		(MLXSW_PORT_MAX_IB_PHY_PORTS + 1)
-
-#define MLXSW_PORT_DEVID_BITS_OFFSET	10
-#define MLXSW_PORT_PHY_BITS_OFFSET	4
-#define MLXSW_PORT_PHY_BITS_MASK	(MLXSW_PORT_MAX_PHY_PORTS - 1)
-
-#define MLXSW_PORT_CPU_PORT		0x0
-#define MLXSW_PORT_ROUTER_PORT		(MLXSW_PORT_MAX_PHY_PORTS + 2)
-
-#define MLXSW_PORT_DONT_CARE		(MLXSW_PORT_MAX_PORTS)
-
-#define MLXSW_PORT_MODULE_MAX_WIDTH	4
-
-enum mlxsw_port_admin_status {
-	MLXSW_PORT_ADMIN_STATUS_UP = 1,
-	MLXSW_PORT_ADMIN_STATUS_DOWN = 2,
-	MLXSW_PORT_ADMIN_STATUS_UP_ONCE = 3,
-	MLXSW_PORT_ADMIN_STATUS_DISABLED = 4,
+static struct mlxsw_driver mlxsw_minimal_driver = {
+	.kind		= mlxsw_minimal_driver_name,
+	.priv_size	= 1,
+	.profile	= &mlxsw_minimal_config_profile,
 };
 
-enum mlxsw_reg_pude_oper_status {
-	MLXSW_PORT_OPER_STATUS_UP = 1,
-	MLXSW_PORT_OPER_STATUS_DOWN = 2,
-	MLXSW_PORT_OPER_STATUS_FAILURE = 4,	/* Can be set to up again. */
+static const struct i2c_device_id mlxsw_minimal_i2c_id[] = {
+	{ "mlxsw_minimal", 0},
+	{ },
 };
 
-#endif /* _MLXSW_PORT_H */
+static struct i2c_driver mlxsw_minimal_i2c_driver = {
+	.driver.name = "mlxsw_minimal",
+	.class = I2C_CLASS_HWMON,
+	.id_table = mlxsw_minimal_i2c_id,
+};
+
+static int __init mlxsw_minimal_module_init(void)
+{
+	int err;
+
+	err = mlxsw_core_driver_register(&mlxsw_minimal_driver);
+	if (err)
+		return err;
+
+	err = mlxsw_i2c_driver_register(&mlxsw_minimal_i2c_driver);
+	if (err)
+		goto err_i2c_driver_register;
+
+	return 0;
+
+err_i2c_driver_register:
+	mlxsw_core_driver_unregister(&mlxsw_minimal_driver);
+
+	return err;
+}
+
+static void __exit mlxsw_minimal_module_exit(void)
+{
+	mlxsw_i2c_driver_unregister(&mlxsw_minimal_i2c_driver);
+	mlxsw_core_driver_unregister(&mlxsw_minimal_driver);
+}
+
+module_init(mlxsw_minimal_module_init);
+module_exit(mlxsw_minimal_module_exit);
+
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_AUTHOR("Vadim Pasternak <vadimp@mellanox.com>");
+MODULE_DESCRIPTION("Mellanox minimal driver");
+MODULE_DEVICE_TABLE(i2c, mlxsw_minimal_i2c_id);
