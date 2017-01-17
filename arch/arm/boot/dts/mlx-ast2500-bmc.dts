@@ -69,6 +69,31 @@
 	status = "okay";
 };
 
+&i2c6 {
+	status = "okay";
+
+	hwmon@27 {
+		compatible = "ti,ucd9240";
+		reg = <0x27>;
+	};
+
+	hwmon@41 {
+		compatible = "ti,ucd9240";
+		reg = <0x41>;
+	};
+
+	adc@6d {
+		compatible = "maxim,max11603";
+		reg = <0x6d>;
+		adc0: iio-device@0 {
+			#io-channel-cells = <1>;
+			io-channels = <&adc0 0>, <&adc0 1>, <&adc0 2>,
+				      <&adc0 3>, <&adc0 4>, <&adc0 5>,
+				      <&adc0 6>, <&adc0 7>;
+		};
+	};
+};
+
 &i2c0 {
         status = "okay";
 };
@@ -83,11 +108,6 @@
 
 &i2c3 {
 	status = "okay";
-        eeprom@50 {
-                compatible = "atmel,24c08";
-                reg = <0x50>;
-                pagesize = <16>;
-        };
 
 	mlxcpld-ctrl@71 {
 		#address-cells = <1>;
@@ -283,6 +303,17 @@
 			};
 		};
 
+		gpro {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			gpro1 {
+				label = "version";
+				reg = <0x01>;
+				mask = <0xff>;
+				bit = <0xff>;
+			};
+		};
+
 		led {
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -308,6 +339,43 @@
 			};
 		};
 	};
+
+	mlxcpld-ctrl@72 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "mellanox,mlxcpld-ctrl";
+		reg = <0x72>;
+
+		gpro {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			gpro1 {
+				label = "version";
+				reg = <0x01>;
+				mask = <0xff>;
+				bit = <0xff>;
+			};
+		};
+
+	};
+
+	mlxcpld-ctrl@73 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "mellanox,mlxcpld-ctrl";
+		reg = <0x73>;
+
+		gpro {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			gpro1 {
+				label = "version";
+				reg = <0x01>;
+				mask = <0xff>;
+				bit = <0xff>;
+			};
+		};
+	};
 };
 
 &i2c4 {
@@ -316,26 +384,50 @@
 
 &i2c5 {
         status = "okay";
-};
 
-&i2c6 {
-        status = "okay";
+	lm75@49 {
+		compatible = "national,lm75";
+		reg = <0x49>;
+	};
+
+	lm75@4a {
+		compatible = "national,lm75";
+		reg = <0x4a>;
+	};
 };
 
 &i2c7 {
 	status = "okay";
-	lm75@4d {
-		compatible = "national,lm75";
-		reg = <0x4d>;
+
+	eeprom@52 {
+		compatible = "atmel,24c32";
+		reg = <0x52>;
 	};
 };
 
 &i2c8 {
-        status = "okay";
+	status = "okay";
+
+		eeprom@51 {
+		compatible = "atmel,24c32";
+		reg = <0x51>;
+	};
 };
 
 &i2c9 {
 	status = "okay";
+
+	eeprom@52 {
+		compatible = "atmel,24c32";
+		reg = <0x52>;
+	};
+
+	i2cswitch@71 {
+		compatible = "nxp,pca9548";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x71>;
+	};
 };
 
 &i2c10 {
@@ -344,6 +436,11 @@
 
 &i2c11 {
 	status = "okay";
+
+	eeprom@51 {
+		compatible = "atmel,24c32";
+		reg = <0x51>;
+	};
 };
 
 &i2c12 {
