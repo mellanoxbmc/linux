@@ -1,0 +1,13 @@
+Bindings for ADC connected to the Aspeed 25xx ADC controller
+
+Required properties:
+- compatible	: "aspeed,aspeed2500-adc"
+- reg		: ADC controller registers offset
+
+Example:
+	adc: adc@1e6e9000 {
+		compatible = "aspeed,aspeed2500-adc";
+		reg = <0x1e6e9000 0xc8>;
+		clocks = <&clk_apb>;
+		interrupts = <31>;
+	};

@@ -462,3 +462,7 @@
 &vuart {
 	status = "okay";
 };
+
+&adc {
+	status = "okay";
+};

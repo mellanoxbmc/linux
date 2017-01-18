@@ -8,4 +8,11 @@ config SENSORS_ASPEED_PWM_FAN
           This driver provides support for the ASPEED PWM & FAN Tachometer
           Controller, which provides an Sensor, fan control.
 
+config SENSORS_ASPEED_ADC
+        tristate "ASPEED ADC Controller Driver"
+        depends on ARCH_ASPEED
+        default n
+        help
+          This driver provides support for the ASPEED ADC Controller.
+
 endmenu
