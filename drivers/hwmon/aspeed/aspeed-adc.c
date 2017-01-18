@@ -411,7 +411,7 @@ aspeed_adc_show_adc(struct device *dev, struct device_attribute *attr,
 		return sprintf(buf, "%d\n", aspeed_adc_get_hyst_up(aspeed_adc,
 								attr2->index));
 	case 7:
-		return sprintf(buf, "%d\n", speed_adc_get_hyst_lo(aspeed_adc,
+		return sprintf(buf, "%d\n", aspeed_adc_get_hyst_lo(aspeed_adc,
 								attr2->index));
 	default:
 		return -EINVAL;
