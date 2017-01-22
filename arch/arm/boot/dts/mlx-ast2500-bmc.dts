@@ -69,47 +69,46 @@
 	status = "okay";
 };
 
-&i2c6 {
-	status = "okay";
-
-	hwmon@27 {
-		compatible = "ti,ucd9240";
-		reg = <0x27>;
-	};
-
-	hwmon@41 {
-		compatible = "ti,ucd9240";
-		reg = <0x41>;
-	};
-
-	adc@6d {
-		compatible = "maxim,max11603";
-		reg = <0x6d>;
-		adc0: iio-device@0 {
-			#io-channel-cells = <1>;
-			io-channels = <&adc0 0>, <&adc0 1>, <&adc0 2>,
-				      <&adc0 3>, <&adc0 4>, <&adc0 5>,
-				      <&adc0 6>, <&adc0 7>;
-		};
-	};
-};
-
 &i2c0 {
-        status = "okay";
+	status = "okay";
 };
 
 &i2c1 {
-        status = "okay";
+	status = "okay";
 };
 
 &i2c2 {
-        status = "okay";
+	status = "okay";
 };
 
 &i2c3 {
 	status = "okay";
 
-	mlxcpld-ctrl@71 {
+	psu_eeprom@50 {
+		compatible = "atmel,24c02";
+		reg = <0x50>;
+	};
+
+	psu_eeprom@51 {
+		compatible = "atmel,24c02";
+		reg = <0x51>;
+	};
+
+	psu_ctrl@58 {
+		compatible = "dps460";
+		reg = <0x58>;
+	};
+
+	psu_ctrl@59 {
+		compatible = "dps460";
+		reg = <0x59>;
+	};
+};
+
+&i2c4 {
+	status = "okay";
+
+	mlxcpld-mng-ctrl@71 {
 		#address-cells = <1>;
 		#size-cells = <0>;
 		compatible = "mellanox,mlxcpld-ctrl";
@@ -340,7 +339,7 @@
 		};
 	};
 
-	mlxcpld-ctrl@72 {
+	mlxcpld-swb-ctrl@72 {
 		#address-cells = <1>;
 		#size-cells = <0>;
 		compatible = "mellanox,mlxcpld-ctrl";
@@ -359,7 +358,7 @@
 
 	};
 
-	mlxcpld-ctrl@73 {
+	mlxcpld-port-ctrl@73 {
 		#address-cells = <1>;
 		#size-cells = <0>;
 		compatible = "mellanox,mlxcpld-ctrl";
@@ -378,12 +377,52 @@
 	};
 };
 
-&i2c4 {
-        status = "okay";
+&i2c5 {
+	status = "okay";
+
+	eeprom@50 {
+		compatible = "atmel,24c32";
+		reg = <0x50>;
+	};
+
+	eeprom@51 {
+		compatible = "atmel,24c32";
+		reg = <0x51>;
+	};
 };
 
-&i2c5 {
-        status = "okay";
+&i2c6 {
+	status = "okay";
+
+	eeprom@51 {
+		compatible = "atmel,24c32";
+		reg = <0x51>;
+	};
+
+	eeprom@52 {
+		compatible = "atmel,24c32";
+		reg = <0x52>;
+	};
+
+	eeprom@55 {
+		compatible = "atmel,24c32";
+		reg = <0x55>;
+	};
+
+	i2cswitch@71 {
+		compatible = "nxp,pca9548";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x71>;
+	};
+};
+
+&i2c7 {
+	status = "okay";
+};
+
+&i2c8 {
+	status = "okay";
 
 	lm75@49 {
 		compatible = "national,lm75";
@@ -396,51 +435,37 @@
 	};
 };
 
-&i2c7 {
-	status = "okay";
-
-	eeprom@52 {
-		compatible = "atmel,24c32";
-		reg = <0x52>;
-	};
-};
-
-&i2c8 {
-	status = "okay";
-
-		eeprom@51 {
-		compatible = "atmel,24c32";
-		reg = <0x51>;
-	};
-};
-
 &i2c9 {
 	status = "okay";
-
-	eeprom@52 {
-		compatible = "atmel,24c32";
-		reg = <0x52>;
-	};
-
-	i2cswitch@71 {
-		compatible = "nxp,pca9548";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		reg = <0x71>;
-	};
 };
 
 &i2c10 {
 	status = "okay";
+
+	hwmon@41 {
+		compatible = "ti,ucd9240";
+		reg = <0x41>;
+	};
+
+	hwmon@27 {
+		compatible = "ti,ucd9240";
+		reg = <0x27>;
+	};
+
+	adc@6d {
+		compatible = "maxim,max11603";
+		reg = <0x6d>;
+		adc0: iio-device@0 {
+			#io-channel-cells = <1>;
+			io-channels = <&adc0 0>, <&adc0 1>, <&adc0 2>,
+				      <&adc0 3>, <&adc0 4>, <&adc0 5>,
+				      <&adc0 6>, <&adc0 7>;
+		};
+	};
 };
 
 &i2c11 {
 	status = "okay";
-
-	eeprom@51 {
-		compatible = "atmel,24c32";
-		reg = <0x51>;
-	};
 };
 
 &i2c12 {
