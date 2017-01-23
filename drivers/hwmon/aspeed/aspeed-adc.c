@@ -640,6 +640,7 @@ aspeed_adc_probe(struct platform_device *pdev)
 				  GFP_KERNEL);
 	if (!aspeed_adc)
 		return -ENOMEM;
+	platform_set_drvdata(pdev, aspeed_adc);
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -647,13 +648,9 @@ aspeed_adc_probe(struct platform_device *pdev)
 		return -ENOENT;
 	}
 
-	if (!devm_request_region(&pdev->dev, res->start, resource_size(res),
-				 res->name))
-		return -EBUSY;
-
 	aspeed_adc->reg_base = devm_ioremap_resource(&pdev->dev, res);
-	if (!aspeed_adc->reg_base)
-		return -EIO;
+	if (IS_ERR(aspeed_adc->reg_base))
+		return PTR_ERR(aspeed_adc->reg_base);
 
 	aspeed_adc->irq = platform_get_irq(pdev, 0);
 	if (aspeed_adc->irq < 0)
@@ -667,8 +664,6 @@ aspeed_adc_probe(struct platform_device *pdev)
 	aspeed_adc->dev = hwmon_device_register(&pdev->dev);
 	if (IS_ERR(aspeed_adc->dev))
 		return PTR_ERR(aspeed_adc->dev);
-
-	platform_set_drvdata(pdev, aspeed_adc);
 
 	for (i = 0; i < ASPEED_ADC_MAX_CH_NO; i++) {
 		err = sysfs_create_group(&pdev->dev.kobj,
