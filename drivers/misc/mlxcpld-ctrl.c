@@ -188,8 +188,8 @@ static ssize_t mlxcpld_ctrl_attr_show(struct device *dev,
 				      struct device_attribute *attr,
 				      char *buf)
 {
-	struct i2c_client *client = to_i2c_client(dev);
-	struct mlxcpld_ctrl_priv_data *priv = i2c_get_clientdata(client);
+	struct mlxcpld_ctrl_priv_data *priv =
+					i2c_get_clientdata(to_i2c_client(dev));
 	int index = to_sensor_dev_attr_2(attr)->index;
 	int nr = to_sensor_dev_attr_2(attr)->nr;
 	struct mlxcpld_ctrl_data *data;
@@ -220,25 +220,25 @@ static ssize_t mlxcpld_ctrl_attr_show(struct device *dev,
 		break;
 
 	case MLXCPLD_CTRL_ATTR_TYPE_RST_CAUSE:
-		data = priv->cause + BIT(index % priv->cause_count);
-		reg_val = !!(i2c_smbus_read_byte_data(client, data->reg) |
-			     data->mask);
+		data = priv->cause + BIT(index % priv->cause_count) - 1;
+		reg_val = !!(i2c_smbus_read_byte_data(priv->client, data->reg)
+			     | data->mask);
 		break;
 
 	case MLXCPLD_CTRL_ATTR_TYPE_MUX:
-		data = priv->mux + BIT(index % priv->mux_count);
-		reg_val = i2c_smbus_read_byte_data(client, data->reg) &
+		data = priv->mux + BIT(index % priv->mux_count) - 1;
+		reg_val = i2c_smbus_read_byte_data(priv->client, data->reg) &
 			  data->mask;
 		break;
 
 	case MLXCPLD_CTRL_ATTR_TYPE_GPRW:
-		data = priv->gprw + BIT(index % priv->gprw_count);
-		reg_val = i2c_smbus_read_byte_data(client, data->reg);
+		data = priv->gprw + BIT(index % priv->gprw_count) - 1;
+		reg_val = i2c_smbus_read_byte_data(priv->client, data->reg);
 		break;
 
 	case MLXCPLD_CTRL_ATTR_TYPE_GPRO:
-		data = priv->gpro + BIT(index % priv->gpro_count);
-		reg_val = i2c_smbus_read_byte_data(client, data->reg);
+		data = priv->gpro + BIT(index % priv->gpro_count) - 1;
+		reg_val = i2c_smbus_read_byte_data(priv->client, data->reg);
 		break;
 	}
 
@@ -270,7 +270,7 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 		if (err)
 			return err;
 
-		data = priv->rst + BIT(index % priv->rst_count);
+		data = priv->rst + BIT(index % priv->rst_count) - 1;
 		val = !!val;
 		if (val)
 			mask = ~data->mask;
@@ -291,7 +291,7 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 		if (err)
 			return err;
 
-		data = priv->mux + BIT(index % priv->mux_count);
+		data = priv->mux + BIT(index % priv->mux_count) - 1;
 		reg_val = i2c_smbus_read_byte_data(client, data->reg) &
 			  data->mask;
 
@@ -316,7 +316,7 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 		if (err)
 			return err;
 
-		data = priv->gprw + BIT(index % priv->gprw_count);
+		data = priv->gprw + BIT(index % priv->gprw_count) - 1;
 
 		err = i2c_smbus_write_byte_data(client, data->reg, val);
 		if (err) {
@@ -1112,8 +1112,8 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 				return err;
 		}
 	}
-	priv->client = client;
-	priv->plat = pdata;
+
+	i2c_set_clientdata(client, priv);
 	spin_lock_init(&priv->lock);
 	err = mlxcpld_ctrl_attr_init(priv);
 	if (err) {
