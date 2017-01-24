@@ -184,41 +184,6 @@
 				addr = <0x50>;
 			};
 		};
-
-		reset {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			reset1 {
-				label = "bmc_reset_soft";
-				reg = <0x17>;
-				mask = <0xfe>;
-			};
-
-			reset2 {
-				label = "system_reset_hard";
-				reg = <0x17>;
-				mask = <0xfd>;
-			};
-
-			reset3 {
-				label = "cpu_reset_soft";
-				reg = <0x17>;
-				mask = <0xfb>;
-			};
-
-			reset4 {
-				label = "cpu_reset_hard";
-				reg = <0x17>;
-				mask = <0xf7>;
-			};
-
-			reset5 {
-				label = "cpu_reset_go";
-				reg = <0x17>;
-				mask = <0xef>;
-			};
-		};
-
 		cause {
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -277,31 +242,6 @@
 			};
 		};
 
-		mux {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			mux1 {
-				label = "system_uart";
-				reg = <0x33>;
-				mask = <0xf9>;
-				bit = <0x00>;
-			};
-
-			mux2 {
-				label = "sol_uart";
-				reg = <0x33>;
-				mask = <0xfa>;
-				bit = <0x01>;
-			};
-
-			mux3 {
-				label = "bmc_uart";
-				reg = <0x33>;
-				mask = <0xfc>;
-				bit = <0x02>;
-			};
-		};
-
 		gpro {
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -310,31 +250,6 @@
 				reg = <0x01>;
 				mask = <0xff>;
 				bit = <0xff>;
-			};
-		};
-
-		led {
-			#address-cells = <1>;
-			#size-cells = <0>;
-			led1 {
-				label = "fan1:green";
-				reg = <0x21>;
-				mask = <0xf0>;
-			};
-			led2 {
-				label = "fan1:red";
-				reg = <0x21>;
-				mask = <0xf0>;
-			};
-			led3 {
-				label = "psu:green";
-				reg = <0x20>;
-				mask = <0x0F>;
-			};
-			led4 {
-				label = "psu:red";
-				reg = <0x20>;
-				mask = <0x0F>;
 			};
 		};
 	};
@@ -388,6 +303,141 @@
 	eeprom@51 {
 		compatible = "atmel,24c32";
 		reg = <0x51>;
+	};
+
+	mlxcpld-mng-ctrl@71 {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		compatible = "mellanox,mlxcpld-ctrl";
+		reg = <0x71>;
+		top_aggr_offset = <0x3a>;
+		top_aggr_mask = <0x48>;
+		top_aggr_irq = <174>;
+		interrupt-parent = <&gpio>;
+		gpios-signal = <&gpio ASPEED_GPIO(S, 1)>;
+
+		mux {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			mux1 {
+				label = "uart_sel";
+				reg = <0x30>;
+				mask = <0xef>;
+				bit = <0x00>;
+			};
+			mux2 {
+				label = "bmc_uart_en";
+				reg = <0x32>;
+				mask = <0xdf>;
+				bit = <0x00>;
+			};
+			mux4 {
+				label = "safe_bios_disable";
+				reg = <0x30>;
+				mask = <0xdf>;
+				bit = <0x01>;
+			};
+			mux5 {
+				label = "spi_burn_bios_ci";
+				reg = <0x30>;
+				mask = <0xbf>;
+				bit = <0x00>;
+			};
+		};
+
+		led {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			led1 {
+				label = "status:green";
+				reg = <0x20>;
+				mask = <0xf0>;
+			};
+			led2 {
+				label = "status:red";
+				reg = <0x20>;
+				mask = <0xf0>;
+			};
+			led3 {
+				label = "fan1:green";
+				reg = <0x21>;
+				mask = <0xf0>;
+			};
+			led4 {
+				label = "fan1:red";
+				reg = <0x21>;
+				mask = <0xf0>;
+			};
+			led5 {
+				label = "fan2:green";
+				reg = <0x21>;
+				mask = <0x0f>;
+			};
+			led6 {
+				label = "fan2:red";
+				reg = <0x21>;
+				mask = <0x0f>;
+			};
+			led7 {
+				label = "fan3:green";
+				reg = <0x22>;
+				mask = <0xf0>;
+			};
+			led8 {
+				label = "fan3:red";
+				reg = <0x22>;
+				mask = <0xf0>;
+			};
+			led9 {
+				label = "fan4:green";
+				reg = <0x22>;
+				mask = <0x0f>;
+			};
+			led10 {
+				label = "fan4:red";
+				reg = <0x22>;
+				mask = <0x0f>;
+			};
+		};
+		reset {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reset1 {
+				label = "bmc_reset_soft";
+				reg = <0x17>;
+				mask = <0xfd>;
+			};
+			reset2 {
+				label = "system_reset_hard";
+				reg = <0x17>;
+				mask = <0xfe>;
+			};
+			reset3 {
+				label = "cpu_reset_soft";
+				reg = <0x17>;
+				mask = <0xf7>;
+			};
+			reset4 {
+				label = "cpu_reset_hard";
+				reg = <0x17>;
+				mask = <0xef>;
+			};
+			reset5 {
+				label = "sys_power_cycle";
+				reg = <0x30>;
+				mask = <0xfb>;
+			};
+			reset6 {
+				label = "ps1_on";
+				reg = <0x30>;
+				mask = <0xfe>;
+			};
+			reset7 {
+				label = "ps2_on";
+				reg = <0x30>;
+				mask = <0xfd>;
+			};
+		};
 	};
 };
 
