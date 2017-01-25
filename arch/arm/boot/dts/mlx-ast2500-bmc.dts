@@ -395,6 +395,15 @@
 				bit = <0xff>;
 			};
 		};
+		reset {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reset8 {
+				label = "phy";
+				reg = <0x19>;
+				mask = <0xef>;
+			};
+		};
 
 	};
 
