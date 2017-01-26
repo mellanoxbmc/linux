@@ -172,11 +172,16 @@ static void __init do_mlx_setup(void)
 
 	/* Set strap to RGMII for dedicated PHY networking */
 	reg = readl(AST_IO(AST_BASE_SCU | 0x70));
-	reg |= BIT(6) | BIT(7);
+	reg |= BIT(7);
+	reg &= ~BIT(6);
 	writel(reg, AST_IO(AST_BASE_SCU | 0x70));
 
 	/* Disable UART1 Reset from LPC */
 	writel(0x00000A00, AST_IO(AST_BASE_LPC | 0x98));
+
+	reg = readl(AST_IO(AST_BASE_SCU | 0x48));
+	reg |= BIT(29);
+	writel(reg, AST_IO(AST_BASE_SCU | 0x48));
 }
 
 #define SCU_PASSWORD	0x1688A8A8
