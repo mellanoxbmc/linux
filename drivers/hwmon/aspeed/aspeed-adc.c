@@ -201,7 +201,7 @@ aspeed_adc_set_hyst_up(struct aspeed_adc_data *aspeed_adc, u8 ch, u32 value)
 }
 
 static u8
-aspeed_adc_get_hyster_en(struct aspeed_adc_data *aspeed_adc, u8 ch)
+aspeed_adc_get_hyst_en(struct aspeed_adc_data *aspeed_adc, u8 ch)
 {
 	if (aspeed_adc_read(aspeed_adc, ASPEED_ADC_HYSTER0 + (ch * 4)) &
 			   ASPEED_ADC_HYSTER_EN)
@@ -226,7 +226,7 @@ aspeed_adc_set_hyst_en(struct aspeed_adc_data *aspeed_adc, u8 ch, u8 enable)
 }
 
 static u16
-aspeed_adc_get_lower(struct aspeed_adc_data *aspeed_adc, u8 ch)
+aspeed_adc_get_lo(struct aspeed_adc_data *aspeed_adc, u8 ch)
 {
 	return aspeed_adc_read(aspeed_adc, ASPEED_ADC_BOUND0 + (ch * 4)) &
 			       ASPEED_ADC_L_BOUND;
@@ -242,7 +242,7 @@ aspeed_adc_set_lo(struct aspeed_adc_data *aspeed_adc, u8 ch, u16 value)
 }
 
 static u16
-aspeed_adc_get_upper(struct aspeed_adc_data *aspeed_adc, u8 ch)
+aspeed_adc_get_up(struct aspeed_adc_data *aspeed_adc, u8 ch)
 {
 	return ((aspeed_adc_read(aspeed_adc, ASPEED_ADC_BOUND0 +
 				 (ch * 4)) & ASPEED_ADC_H_BOUND) >> 16);
@@ -373,7 +373,7 @@ aspeed_adc_set_en(struct aspeed_adc_data *aspeed_adc, u8 ch, u8 enable)
  * attr ADC sysfs 0~max adc channel
  * 0 - show/store channel enable
  * 1 - show value
- * 2 - show alarm get statuse
+ * 2 - show alarm get status
  * 3 - show/store upper
  * 4 - show/store lower
  * 5 - show/store hystersis enable
@@ -399,13 +399,13 @@ aspeed_adc_show_adc(struct device *dev, struct device_attribute *attr,
 		return sprintf(buf, "%d\n", aspeed_adc_get_alarm(aspeed_adc,
 								attr2->index));
 	case 3:
-		return sprintf(buf, "%d\n", aspeed_adc_get_upper(aspeed_adc,
-								attr2->index));
+		return sprintf(buf, "%d\n", aspeed_adc_get_up(aspeed_adc,
+							      attr2->index));
 	case 4:
-		return sprintf(buf, "%d\n", aspeed_adc_get_lower(aspeed_adc,
-								attr2->index));
+		return sprintf(buf, "%d\n", aspeed_adc_get_lo(aspeed_adc,
+							      attr2->index));
 	case 5:
-		en = aspeed_adc_get_hyster_en(aspeed_adc, attr2->index);
+		en = aspeed_adc_get_hyst_en(aspeed_adc, attr2->index);
 		return sprintf(buf, "%d: %s\n", en, en ? "Enable" : "Disable");
 	case 6:
 		return sprintf(buf, "%d\n", aspeed_adc_get_hyst_up(aspeed_adc,
@@ -545,7 +545,7 @@ static const struct attribute_group aspeed_temp_attribute_groups[] = {
  * attr ADC sysfs 0~max adc channel
  * 0 - show/store channel enable
  * 1 - show value
- * 2 - show alarm get statuse
+ * 2 - show alarm get status
  * 3 - show/store upper
  * 4 - show/store lower
  * 5 - show/store hystersis enable
@@ -563,7 +563,7 @@ static SENSOR_DEVICE_ATTR_2(adc##index##_upper, S_IRUGO | S_IWUSR, \
 	aspeed_adc_show_adc, aspeed_adc_store_adc, 3, index); \
 static SENSOR_DEVICE_ATTR_2(adc##index##_lower, S_IRUGO | S_IWUSR, \
 	aspeed_adc_show_adc, aspeed_adc_store_adc, 4, index); \
-static SENSOR_DEVICE_ATTR_2(adc##index##_hyster_en, S_IRUGO | S_IWUSR, \
+static SENSOR_DEVICE_ATTR_2(adc##index##_hyst_en, S_IRUGO | S_IWUSR, \
 	aspeed_adc_show_adc, aspeed_adc_store_adc, 5, index); \
 static SENSOR_DEVICE_ATTR_2(adc##index##_hyst_up, S_IRUGO | S_IWUSR, \
 	aspeed_adc_show_adc, aspeed_adc_store_adc, 6, index); \
@@ -575,7 +575,7 @@ static struct attribute *adc##index##_attributes[] = { \
 	&sensor_dev_attr_adc##index##_alarm.dev_attr.attr, \
 	&sensor_dev_attr_adc##index##_upper.dev_attr.attr, \
 	&sensor_dev_attr_adc##index##_lower.dev_attr.attr, \
-	&sensor_dev_attr_adc##index##_hyster_en.dev_attr.attr, \
+	&sensor_dev_attr_adc##index##_hyst_en.dev_attr.attr, \
 	&sensor_dev_attr_adc##index##_hyst_up.dev_attr.attr, \
 	&sensor_dev_attr_adc##index##_hyst_lo.dev_attr.attr, \
 	NULL \
@@ -625,6 +625,7 @@ static int
 aspeed_adc_probe(struct platform_device *pdev)
 {
 	struct aspeed_adc_data *aspeed_adc;
+	struct device_node *child;
 	struct resource *res;
 	int i;
 	int err;
@@ -680,6 +681,24 @@ aspeed_adc_probe(struct platform_device *pdev)
 	}
 
 	aspeed_adc_ctrl_init(aspeed_adc);
+
+	for_each_child_of_node(pdev->dev.of_node, child) {
+		u32 channel, min, max;
+
+		if (of_property_read_u32(child, "channel", &channel))
+			return -ENODEV;
+
+		if (of_property_read_u32(child, "min", &min))
+			min = 0;
+
+		if (of_property_read_u32(child, "max", &max))
+			max = 0;
+
+		/* Enable ADC channel, set lower and upper thresholds. */
+		aspeed_adc_set_en(aspeed_adc, channel, 1);
+		aspeed_adc_set_lo(aspeed_adc, channel, min);
+		aspeed_adc_set_up(aspeed_adc, channel, max);
+	}
 
 	return 0;
 }

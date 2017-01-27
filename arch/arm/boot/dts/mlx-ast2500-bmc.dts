@@ -539,4 +539,46 @@
 
 &adc {
 	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	adc1 {
+		channel = <0>;
+		min = <677>;
+		max = <828>;
+	};
+	adc2 {
+		channel = <2>;
+		min = <684>;
+		max = <836>;
+	};
+	adc3 {
+		channel = <3>;
+		min = <684>;
+		max = <836>;
+	};
+	adc4 {
+		channel = <4>;
+		min = <676>;
+		max = <826>;
+	};
+	adc5 {
+		channel = <10>;
+		min = <691>;
+		max = <845>;
+	};
+	adc6 {
+		channel = <11>;
+		min = <640>;
+		max = <782>;
+	};
+	adc7 {
+		channel = <12>;
+		min = <615>;
+		max = <751>;
+	};
+	adc8 {
+		channel = <13>;
+		min = <587>;
+		max = <719>;
+	};
 };
