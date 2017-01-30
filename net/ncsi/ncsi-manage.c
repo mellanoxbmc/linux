@@ -235,9 +235,10 @@ static void ncsi_channel_monitor(unsigned long data)
 void ncsi_start_channel_monitor(struct ncsi_channel *nc)
 {
 	unsigned long flags;
+	struct ncsi_dev_priv *ndp = nc->package->ndp;
 
 	spin_lock_irqsave(&nc->lock, flags);
-	WARN_ON_ONCE(nc->monitor.enabled);
+	netdev_dbg(ndp->ndev.dev, "NCSI channel monitoring started\n");
 	nc->monitor.enabled = true;
 	nc->monitor.state = NCSI_CHANNEL_MONITOR_START;
 	spin_unlock_irqrestore(&nc->lock, flags);
