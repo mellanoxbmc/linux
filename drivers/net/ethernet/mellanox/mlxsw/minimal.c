@@ -56,8 +56,15 @@ static const struct i2c_device_id mlxsw_minimal_i2c_id[] = {
 	{ },
 };
 
+static const struct of_device_id mlxsw_minimal_i2c_dt_match[] = {
+	{ .compatible = "mellanox,mlxsw_minimal" },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, minimal_i2c_dt_match);
+
 static struct i2c_driver mlxsw_minimal_i2c_driver = {
 	.driver.name = "mlxsw_minimal",
+	.driver.of_match_table = of_match_ptr(mlxsw_minimal_i2c_dt_match),
 	.class = I2C_CLASS_HWMON,
 	.id_table = mlxsw_minimal_i2c_id,
 };
