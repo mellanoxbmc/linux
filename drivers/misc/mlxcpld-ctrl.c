@@ -269,7 +269,7 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 	int index = to_sensor_dev_attr_2(attr)->index;
 	int nr = to_sensor_dev_attr_2(attr)->nr;
 	struct mlxcpld_ctrl_data *data;
-	u8 mask = 0, reg_val = 0, val;
+	u8 reg_val = 0, val;
 	int err;
 
 	switch (nr) {
@@ -286,14 +286,16 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 			return err;
 
 		data = priv->rst + (index - priv->rst_ind) % priv->rst_count;
+		reg_val = i2c_smbus_read_byte_data(priv->client, data->reg) &
+			  data->mask;
 		val = !!val;
 		if (val)
-			mask = ~data->mask;
-		reg_val = i2c_smbus_read_byte_data(priv->client, data->reg) |
-			  data->mask;
+			reg_val |= ~data->mask;
+		else
+			reg_val &= data->mask;
 
 		err = i2c_smbus_write_byte_data(priv->client, data->reg,
-						reg_val | mask);
+						reg_val);
 		if (err) {
 			dev_err(&priv->client->dev, "Failed to reset %s\n",
 				data->label);
