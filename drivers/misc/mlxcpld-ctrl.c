@@ -63,6 +63,11 @@
 					 MLXCPLD_LED_OFFSET_HALF)
 #define MLXCPLD_LED_GREEN_BLINK_FULL (MLXCPLD_LED_GREEN_STATIC_ON + \
 					 MLXCPLD_LED_OFFSET_FULL)
+#define MLXCPLD_LED_AMBER_STATIC_ON 0x09 /* Solid amber */
+#define MLXCPLD_LED_AMBER_BLINK_HALF (MLXCPLD_LED_AMBER_STATIC_ON + \
+					 MLXCPLD_LED_OFFSET_HALF)
+#define MLXCPLD_LED_AMBER_BLINK_FULL (MLXCPLD_LED_AMBER_STATIC_ON + \
+					 MLXCPLD_LED_OFFSET_FULL)
 #define MLXCPLD_LED_BLINK_3HZ 167 /* ~167 msec off/on */
 #define MLXCPLD_LED_BLINK_6HZ 83 /* ~83 msec off/on */
 
@@ -979,6 +984,10 @@ static int mlxcpld_led_config(struct mlxcpld_ctrl_priv_data *priv)
 			brightness = LED_OFF;
 			priv->led_pdata[i].base_color =
 				MLXCPLD_LED_RED_STATIC_ON;
+		} else if (strstr(priv->led[i].label, "amber")) {
+			brightness = LED_OFF;
+			priv->led_pdata[i].base_color =
+				MLXCPLD_LED_AMBER_STATIC_ON;
 		} else {
 			brightness = 1;
 			priv->led_pdata[i].base_color =

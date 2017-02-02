@@ -236,41 +236,46 @@
 				mask = <0xf0>;
 			};
 			led3 {
+				label = "status:amber";
+				reg = <0x20>;
+				mask = <0xf0>;
+			};
+			led4 {
 				label = "fan1:green";
 				reg = <0x21>;
 				mask = <0xf0>;
 			};
-			led4 {
+			led5 {
 				label = "fan1:red";
 				reg = <0x21>;
 				mask = <0xf0>;
 			};
-			led5 {
+			led6 {
 				label = "fan2:green";
 				reg = <0x21>;
 				mask = <0x0f>;
 			};
-			led6 {
+			led7 {
 				label = "fan2:red";
 				reg = <0x21>;
 				mask = <0x0f>;
 			};
-			led7 {
+			led8 {
 				label = "fan3:green";
 				reg = <0x22>;
 				mask = <0xf0>;
 			};
-			led8 {
+			led9 {
 				label = "fan3:red";
 				reg = <0x22>;
 				mask = <0xf0>;
 			};
-			led9 {
+			led10 {
 				label = "fan4:green";
 				reg = <0x22>;
 				mask = <0x0f>;
 			};
-			led10 {
+			led11 {
 				label = "fan4:red";
 				reg = <0x22>;
 				mask = <0x0f>;
