@@ -1027,6 +1027,7 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 	struct device_node *child, *np = client->dev.of_node;
 	struct mlxcpld_hotplug_platform_data *pdata;
 	struct mlxcpld_ctrl_priv_data *priv;
+	struct i2c_adapter *adapter;
 	u32 val;
 	int err;
 
@@ -1035,6 +1036,14 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 
 	if (!of_device_is_compatible(np, "mellanox,mlxcpld-ctrl"))
 		return -ENODEV;
+
+	child = of_parse_phandle(np, "i2c-deferred", 0);
+	if (child) {
+		adapter = of_find_i2c_adapter_by_node(child);
+		of_node_put(child);
+		if (!adapter)
+			return -EPROBE_DEFER;
+	}
 
 	if (!i2c_check_functionality(client->adapter,
 				     I2C_FUNC_SMBUS_BYTE_DATA))

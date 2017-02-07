@@ -73,26 +73,6 @@
 
 &i2c3 {
 	status = "okay";
-
-	psu_eeprom@50 {
-		compatible = "atmel,24c02";
-		reg = <0x50>;
-	};
-
-	psu_eeprom@51 {
-		compatible = "atmel,24c02";
-		reg = <0x51>;
-	};
-
-	psu_ctrl@58 {
-		compatible = "dps460";
-		reg = <0x58>;
-	};
-
-	psu_ctrl@59 {
-		compatible = "dps460";
-		reg = <0x59>;
-	};
 };
 
 &i2c4 {
@@ -103,6 +83,7 @@
 		#size-cells = <0>;
 		compatible = "mellanox,mlxcpld-ctrl";
 		reg = <0x71>;
+		i2c-deferred = <&i2c6>;
 		top_aggr_offset = <0x3a>;
 		top_aggr_mask = <0x48>;
 		top_aggr_irq = <174>;
