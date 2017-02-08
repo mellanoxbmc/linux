@@ -1,39 +1,51 @@
-* Aspeed Static Memory controller in SPI mode
+* Aspeed Static Memory controller
 * Aspeed SPI Flash Controller
+
+The Static memory controller in the ast2400 supports 5 chip selects each
+can be attached to NAND, parallel NOR, or SPI NOR attached flash.  The
+Firmware Memory Controller in the ast2500 supports 3 chip selects, two of
+which are always in SPI-NOR mode and the third can be SPI-NOR or parallel
+flash.  The SPI flash controller in the ast2400 supports one of 2 chip
+selects selected by pinmux.  The two SPI flash controllers in the ast2500
+each support two chip selects.
 
 Required properties:
   - compatible : Should be one of
 	"aspeed,ast2400-fmc" for the AST2400 Static Memory Controller
-	"aspeed,ast2500-fmc" for the AST2500 Static Memory Controller
-	"aspeed,ast2400-smc" for the AST2400 SPI flash controller
-  - reg : the first contains the register location and length,
-          the second through nth contains the memory mapping address and length
-	  for the access window for each chips select
-  - interrupts : Should contain the interrupt for the dma device if fmc
+	"aspeed,ast2400-smc" for the AST2400 SPI Flash Controller
+	"aspeed,ast2500-fmc" for the AST2500 Firmware SPI Memory Controller
+	"aspeed,ast2500-smc" for the AST2500 SPI Flash Controllers
+  - reg : the first contains the control register location and length,
+          the second contains the memory window mapping address and length
   - clocks : The APB clock input to the controller
   - #address-cells : must be 1 corresponding to chip select child binding
   - #size-cells : must be 0 corresponding to chip select child binding
 
+Optional properties:
+  - aspeed,fmc-has-dma : controller supports DMA transfers
+  - interrupts : Should contain the interrupt for the dma device if an fmc
 
 Child node required properties:
   - reg : must contain chip select number in first cell of address, must
 	  be 1 tuple long
   - compatible : may contain "vendor,part", must include "jedec,spi-nor"
-		(see spi-nor.txt binding).
+		when attached to SPI flash (see spi-nor.txt binding).
 
 Child node optional properties:
   - label           - (optional) name to assign to mtd, default os assigned
-  - spi-max-frequency - (optional) max frequency of spi bus (XXX max if missing)
+
+Child node optional properties for SPI mode (may be ignored):
+  - spi-max-frequency - (optional) max frequency of spi bus
   - spi-cpol        - (optional) Empty property indicating device requires
-    	 		inverse clock polarity (CPOL) mode (boolean)
+			inverse clock polarity (CPOL) mode (boolean)
   - spi-cpha        - (optional) Empty property indicating device requires
-    			shifted clock phase (CPHA) mode (boolean)
+			shifted clock phase (CPHA) mode (boolean)
   - spi-tx-bus-width - (optional) The bus width(number of data wires) that
                         used for MOSI. Defaults to 1 if not present.
   - spi-rx-bus-width - (optional) The bus width(number of data wires) that
                         used for MOSI. Defaults to 1 if not present.
 
-Child node optional properties:
+Grandchild node optional properties:
  - see mtd/partiton.txt for partitioning bindings and mtd naming
 
 
@@ -72,4 +84,3 @@ fmc: fmc@1e620000 {
 		/* m25p,fast-read; */
 	};
 };
-

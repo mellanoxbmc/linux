@@ -27,11 +27,13 @@
 
 	ahb {
 		bmc_pnor: fmc@1e620000 {
-			reg = < 0x1e620000 0x94
+			reg = < 0x1e620000 0xc4
 				0x20000000 0x02000000 >;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			compatible = "aspeed,ast2500-fmc";
+			aspeed,fmc-has-dma;
+			interrupts = <19>;
 			flash@0 {
 				reg = < 0 >;
 				compatible = "jedec,spi-nor" ;
