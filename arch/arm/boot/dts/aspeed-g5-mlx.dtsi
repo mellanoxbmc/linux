@@ -661,6 +661,51 @@
 						function = "RXD1";
 						groups = "RXD1";
 					};
+
+					pinctrl_spi1_default: spi1_default {
+						function = "SPI1";
+						groups = "SPI1";
+					};
+
+					pinctrl_spi1cs1_default: spi1cs1_default {
+						function = "SPI1CS1";
+						groups = "SPI1CS1";
+					};
+
+					pinctrl_spi1debug_default: spi1debug_default {
+						function = "SPI1DEBUG";
+						groups = "SPI1DEBUG";
+					};
+
+					pinctrl_spi1passthru_default: spi1passthru_default {
+						function = "SPI1PASSTHRU";
+						groups = "SPI1PASSTHRU";
+					};
+
+					pinctrl_spi2ck_default: spi2ck_default {
+						function = "SPI2CK";
+						groups = "SPI2CK";
+					};
+
+					pinctrl_spi2cs0_default: spi2cs0_default {
+						function = "SPI2CS0";
+						groups = "SPI2CS0";
+					};
+
+					pinctrl_spi2cs1_default: spi2cs1_default {
+						function = "SPI2CS1";
+						groups = "SPI2CS1";
+					};
+
+					pinctrl_spi2miso_default: spi2miso_default {
+						function = "SPI2MISO";
+						groups = "SPI2MISO";
+					};
+
+					pinctrl_spi2mosi_default: spi2mosi_default {
+						function = "SPI2MOSI";
+						groups = "SPI2MOSI";
+					};
 				};
 			};
 
