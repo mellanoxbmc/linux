@@ -69,6 +69,10 @@
 	status = "okay";
 };
 
+&i2c1 {
+	status = "okay";
+};
+
 &i2c2 {
 	status = "okay";
 };
@@ -519,6 +523,11 @@
 
 &i2c12 {
 	status = "okay";
+
+	mlxsw_i2c@48 {
+		compatible = "mellanox,mlxsw_minimal";
+		reg = <0x48>;
+	};
 };
 
 &i2c13 {
@@ -581,14 +590,4 @@
 		min = <587>;
 		max = <719>;
 	};
-};
-
-&i2c1 {
-	status = "okay";
-/*
-	mlxsw_i2c@48 {
-		compatible = "mellanox,mlxsw_minimal";
-		reg = <0x48>;
-	};
-*/
 };
