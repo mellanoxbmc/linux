@@ -111,12 +111,16 @@ enum mlxcpld_ctrl_attr_type {
  * @label: attribute register offset;
  * @mask: attribute mask;
  * @bit: attribute effective bit;
+ * @np - pointer to node platform associated with attribute;
+ * @pdev: pointer to platform device associated with attribute;
  */
 struct mlxcpld_ctrl_data {
 	char label[MLXCPLD_CTRL_LABEL_MAX_SIZE];
 	u32 reg;
 	u32 mask;
 	u8 bit;
+	struct device_node *np;
+	struct platform_device *pdev;
 };
 
 #define DRV_NAME "mlnxcpld_ctrl"
@@ -156,6 +160,7 @@ struct mlxcpld_ctrl_led_data {
  * @gprw_count: number of available general purpose read-write attributes;
  * @gpro_count: number of available general purpose read only attributes;
  * @set_handler: if set - interrupt handler should be connected;
+ * @en_dynamic_node: set to true after dynamic device node is enabled;
  */
 struct mlxcpld_ctrl_priv_data {
 	int irq;
@@ -186,7 +191,6 @@ struct mlxcpld_ctrl_priv_data {
 	u8 gprw_count;
 	u8 gpro_count;
 	u8 led_count;
-
 	u8 psu_ind;
 	u8 pwr_ind;
 	u8 fan_ind;
@@ -195,8 +199,20 @@ struct mlxcpld_ctrl_priv_data {
 	u8 mux_ind;
 	u8 gprw_ind;
 	u8 gpro_ind;
-
 	bool set_handler;
+	bool en_dynamic_node;
+};
+
+static struct property flash_en = {
+	.name = "status",
+	.value = "okay",
+	.length = sizeof("okay"),
+};
+
+static struct property flash_dis = {
+	.name = "status",
+	.value = "disabled",
+	.length = sizeof("disabled"),
 };
 
 static ssize_t mlxcpld_ctrl_attr_show(struct device *dev,
@@ -314,6 +330,11 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 			return err;
 
 		data = priv->mux + (index - priv->mux_ind) % priv->mux_count;
+
+		/* Enabling more than one dynamic device is not allowed. */
+		if (val && data->np && priv->en_dynamic_node)
+			break;
+
 		reg_val = i2c_smbus_read_byte_data(priv->client, data->reg) &
 			  data->mask;
 		val = !!val;
@@ -328,6 +349,25 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 			dev_err(&priv->client->dev, "Failed to set %s\n",
 				data->label);
 			return err;
+		}
+
+		if (data->np) {
+			if (val) {
+				of_update_property(data->np, &flash_en);
+
+				data->pdev = of_platform_device_create(
+							data->np, NULL, NULL);
+				priv->en_dynamic_node = true;
+			} else {
+				if (!data->pdev)
+					break;
+
+				of_update_property(data->np, &flash_dis);
+				of_device_unregister(data->pdev);
+				of_node_clear_flag(data->np, OF_POPULATED);
+				data->pdev = NULL;
+				priv->en_dynamic_node = false;
+			}
 		}
 
 		break;
@@ -477,6 +517,7 @@ static int mlxcpld_ctrl_attr_init(struct mlxcpld_ctrl_priv_data *priv)
 		PRIV_DEV_ATTR(i).index = i;
 		sysfs_attr_init(&PRIV_DEV_ATTR(i).dev_attr.attr);
 	}
+
 	priv->mux_ind = i;
 	for (j = 0; j < priv->mux_count; j++, i++) {
 		PRIV_ATTR(i) = &PRIV_DEV_ATTR(i).dev_attr.attr;
@@ -865,7 +906,7 @@ static int
 mlxcpld_ctrl_of_child_data_parser(struct device_node *np,
 				  struct mlxcpld_ctrl_data *data)
 {
-	struct device_node *child;
+	struct device_node *child, *fhandle;
 	const char *label;
 
 	for_each_child_of_node(np, child) {
@@ -878,6 +919,11 @@ mlxcpld_ctrl_of_child_data_parser(struct device_node *np,
 
 		of_property_read_u32(child, "mask", &data->mask);
 		of_property_read_u8(child, "bit", &data->bit);
+
+		fhandle = of_parse_phandle(child, "flash-handle", 0);
+		if (fhandle)
+			data->np = fhandle;
+
 		data++;
 	}
 

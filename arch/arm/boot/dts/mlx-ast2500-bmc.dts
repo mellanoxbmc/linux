@@ -40,6 +40,28 @@
 #include "aspeed-bmc-mlx-flash-layout.dtsi"
 			};
 		};
+
+		host_pnor: spi2@1e631000 {
+			reg = < 0x1e631000 0xc4
+				0x38000000 0x08000000 >;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "aspeed,ast2500-smc";
+			status = "disabled";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_spi2ck_default
+				     &pinctrl_spi2cs0_default
+				     &pinctrl_spi2miso_default
+				     &pinctrl_spi2mosi_default>;
+
+			host_flash {
+				reg = < 0 >;
+				compatible = "jedec,spi-nor";
+				label = "host_flash";
+				#address-cells = < 1 >;
+				#size-cells = < 1 >;
+			};
+		};
 	};
 };
 
@@ -176,12 +198,14 @@
 				reg = <0x32>;
 				mask = <0xfe>;
 				bit = <0x00>;
+				flash-handle = <&host_pnor>;
 			};
 			mux3 {
 				label = "spi_burn_ncsi";
 				reg = <0x32>;
 				mask = <0xfd>;
 				bit = <0x00>;
+				flash-handle = <&host_pnor>;
 			};
 			mux4 {
 				label = "bmc_uart_en";

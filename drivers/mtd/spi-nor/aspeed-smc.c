@@ -689,8 +689,15 @@ static int aspeed_smc_remove(struct platform_device *dev)
 
 	for (n = 0; n < controller->info->nce; n++) {
 		chip = controller->chips[n];
-		if (chip)
+		if (chip) {
+			struct platform_device *cdev =
+					to_platform_device(chip->nor.dev);
+
 			mtd_device_unregister(&chip->nor.mtd);
+			of_device_unregister(cdev);
+			of_node_clear_flag(chip->nor.dev->of_node,
+					   OF_POPULATED);
+		}
 	}
 
 	return 0;
@@ -714,6 +721,7 @@ of_platform_device_create_or_find(struct device_node *child,
 	cdev = of_platform_device_create(child, NULL, parent);
 	if (!cdev)
 		cdev = of_find_device_by_node(child);
+
 	return cdev;
 }
 
