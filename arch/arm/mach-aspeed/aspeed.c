@@ -29,6 +29,7 @@
 #define AST_BASE_MAC0		0X1E660000 /* MAC 1 */
 #define AST_BASE_SCU		0x1E6E2000 /* System Control Unit (SCU) */
 #define AST_BASE_GPIO		0x1E780000 /* GPIO Controller */
+#define AST_BASE_WD		0x1E785000 /* Watch DOG */
 
 static struct map_desc aspeed_io_desc[] __initdata __maybe_unused = {
 	{
@@ -182,6 +183,11 @@ static void __init do_mlx_setup(void)
 	reg = readl(AST_IO(AST_BASE_SCU | 0x48));
 	reg |= BIT(29);
 	writel(reg, AST_IO(AST_BASE_SCU | 0x48));
+
+	/*Disable WD2*/
+	reg = readl(AST_IO(AST_BASE_WD | 0x2c));
+	reg &= ~BIT(0);
+	writel(reg, AST_IO(AST_BASE_WD | 0x2c));
 }
 
 #define SCU_PASSWORD	0x1688A8A8
