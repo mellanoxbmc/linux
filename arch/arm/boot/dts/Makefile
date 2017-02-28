@@ -896,7 +896,9 @@ dtb-$(CONFIG_ARCH_ASPEED) += aspeed-bmc-opp-palmetto.dtb \
 	aspeed-bmc-opp-garrison.dtb \
 	aspeed-bmc-opp-witherspoon.dtb \
 	aspeed-ast2500-evb.dtb \
-	mlx-ast2500-bmc.dtb
+	mlx-ast2500-bmc.dtb \
+        mlx-bluefish-ast2500.dts \
+        mlx-bluewhale-ast2500.dts
 endif
 
 dtstree		:= $(srctree)/$(src)
