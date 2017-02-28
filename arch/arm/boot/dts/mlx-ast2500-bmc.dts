@@ -8,7 +8,7 @@
 #include "aspeed-g5-mlx.dtsi"
 
 / {
-	model = "AST2500 EVB";
+	model = "MSN2420 BMC";
 	compatible = "mellanox,mlx-bmc", "aspeed,ast2500";
 
 	aliases {

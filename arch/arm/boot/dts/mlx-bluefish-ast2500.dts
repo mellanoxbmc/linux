@@ -8,7 +8,7 @@
 #include "aspeed-g5-mlx.dtsi"
 
 / {
-	model = "AST2500 EVB";
+	model = "Blue Fish BMC";
 	compatible = "mellanox,mlx-bmc", "aspeed,ast2500";
 
 	aliases {
@@ -55,6 +55,12 @@
 	status = "okay";
 	use-ncsi;
 	no-hw-checksum;
+};
+
+&mac1 {
+       status = "okay";
+       pinctrl-names = "default";
+       pinctrl-0 = <&pinctrl_rgmii2_default>;
 };
 
 &ehci0 {
