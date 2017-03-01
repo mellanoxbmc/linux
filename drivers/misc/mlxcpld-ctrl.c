@@ -113,6 +113,8 @@ enum mlxcpld_ctrl_attr_type {
  * @bit: attribute effective bit;
  * @np - pointer to node platform associated with attribute;
  * @pdev: pointer to platform device associated with attribute;
+ * @dyndev: pointer to dynamic I2C device, created upon related trigger;
+ * @dyndev_created: flag indicating that dynamic I2C device has been created;
  */
 struct mlxcpld_ctrl_data {
 	char label[MLXCPLD_CTRL_LABEL_MAX_SIZE];
@@ -121,6 +123,8 @@ struct mlxcpld_ctrl_data {
 	u8 bit;
 	struct device_node *np;
 	struct platform_device *pdev;
+	struct mlxcpld_hotplug_device *dyndev;
+	bool dyndev_created;
 };
 
 #define DRV_NAME "mlnxcpld_ctrl"
@@ -214,6 +218,41 @@ static struct property flash_dis = {
 	.value = "disabled",
 	.length = sizeof("disabled"),
 };
+
+static int mlxcpld_ctrl_device_create(struct device *dev,
+					  struct mlxcpld_hotplug_device *item)
+{
+	item->adapter = i2c_get_adapter(item->bus);
+	if (!item->adapter) {
+		dev_err(dev, "Failed to get adapter for bus %d\n",
+			item->bus);
+		return -EFAULT;
+	}
+
+	item->client = i2c_new_device(item->adapter, &item->brdinfo);
+	if (!item->client) {
+		dev_err(dev, "Failed to create client %s at bus %d at addr 0x%02x\n",
+			item->brdinfo.type, item->bus, item->brdinfo.addr);
+		i2c_put_adapter(item->adapter);
+		item->adapter = NULL;
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static void mlxcpld_ctrl_device_destroy(struct mlxcpld_hotplug_device *item)
+{
+	if (item->client) {
+		i2c_unregister_device(item->client);
+		item->client = NULL;
+	}
+
+	if (item->adapter) {
+		i2c_put_adapter(item->adapter);
+		item->adapter = NULL;
+	}
+}
 
 static ssize_t mlxcpld_ctrl_attr_show(struct device *dev,
 				      struct device_attribute *attr,
@@ -322,6 +361,14 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 				data->label);
 			return err;
 		}
+
+		if (data->dyndev && !data->dyndev_created) {
+			mlxcpld_ctrl_device_create(&priv->client->dev,
+						   data->dyndev);
+			data->dyndev_created = true;
+		}
+
+
 		break;
 
 	case MLXCPLD_CTRL_ATTR_TYPE_MUX:
@@ -588,41 +635,6 @@ static int mlxcpld_ctrl_attr_init(struct mlxcpld_ctrl_priv_data *priv)
 	priv->groups[1] = NULL;
 
 	return 0;
-}
-
-static int mlxcpld_ctrl_device_create(struct device *dev,
-					  struct mlxcpld_hotplug_device *item)
-{
-	item->adapter = i2c_get_adapter(item->bus);
-	if (!item->adapter) {
-		dev_err(dev, "Failed to get adapter for bus %d\n",
-			item->bus);
-		return -EFAULT;
-	}
-
-	item->client = i2c_new_device(item->adapter, &item->brdinfo);
-	if (!item->client) {
-		dev_err(dev, "Failed to create client %s at bus %d at addr 0x%02x\n",
-			item->brdinfo.type, item->bus, item->brdinfo.addr);
-		i2c_put_adapter(item->adapter);
-		item->adapter = NULL;
-		return -EFAULT;
-	}
-
-	return 0;
-}
-
-static void mlxcpld_ctrl_device_destroy(struct mlxcpld_hotplug_device *item)
-{
-	if (item->client) {
-		i2c_unregister_device(item->client);
-		item->client = NULL;
-	}
-
-	if (item->adapter) {
-		i2c_put_adapter(item->adapter);
-		item->adapter = NULL;
-	}
 }
 
 static inline void
@@ -904,9 +916,10 @@ mlxcpld_ctrl_of_child_parser(struct device_node *np,
 
 static int
 mlxcpld_ctrl_of_child_data_parser(struct device_node *np,
-				  struct mlxcpld_ctrl_data *data)
+				  struct mlxcpld_ctrl_data *data,
+				  struct mlxcpld_ctrl_priv_data *priv)
 {
-	struct device_node *child, *fhandle;
+	struct device_node *child, *fhandle, *subchild;
 	const char *label;
 
 	for_each_child_of_node(np, child) {
@@ -923,6 +936,29 @@ mlxcpld_ctrl_of_child_data_parser(struct device_node *np,
 		fhandle = of_parse_phandle(child, "flash-handle", 0);
 		if (fhandle)
 			data->np = fhandle;
+
+		for_each_child_of_node(child, subchild) {
+			const char *drvname;
+			u32 val;
+
+			data->dyndev = devm_kzalloc(&priv->client->dev,
+						    sizeof(*data->dyndev),
+						    GFP_KERNEL);
+
+			if (of_property_read_string(subchild, "type",
+						    &drvname))
+				continue;
+			strlcpy(data->dyndev->brdinfo.type, drvname,
+				I2C_NAME_SIZE);
+
+			if (of_property_read_u32(subchild, "bus", &val))
+				continue;
+			data->dyndev->bus = val;
+
+			if (of_property_read_u32(subchild, "addr", &val))
+				continue;
+			data->dyndev->brdinfo.addr = val;
+		}
 
 		data++;
 	}
@@ -1190,7 +1226,8 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 				return -ENOMEM;
 
 			err = mlxcpld_ctrl_of_child_data_parser(child,
-								priv->rst);
+								priv->rst,
+								priv);
 
 			if (err)
 				return err;
@@ -1207,7 +1244,8 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 				return -ENOMEM;
 
 			err = mlxcpld_ctrl_of_child_data_parser(child,
-								priv->cause);
+								priv->cause,
+								priv);
 			if (err)
 				return err;
 		}
@@ -1222,7 +1260,8 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 				return -ENOMEM;
 
 			err = mlxcpld_ctrl_of_child_data_parser(child,
-								priv->mux);
+								priv->mux,
+								priv);
 			if (err)
 				return err;
 		}
@@ -1237,7 +1276,8 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 				return -ENOMEM;
 
 			err = mlxcpld_ctrl_of_child_data_parser(child,
-								priv->gprw);
+								priv->gprw,
+								priv);
 			if (err)
 				return err;
 		}
@@ -1252,7 +1292,8 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 				return -ENOMEM;
 
 			err = mlxcpld_ctrl_of_child_data_parser(child,
-								priv->gpro);
+								priv->gpro,
+								priv);
 			if (err)
 				return err;
 		}
@@ -1275,7 +1316,8 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 				return -ENOMEM;
 
 			err = mlxcpld_ctrl_of_child_data_parser(child,
-								priv->led);
+								priv->led,
+								priv);
 			if (err)
 				return err;
 		}

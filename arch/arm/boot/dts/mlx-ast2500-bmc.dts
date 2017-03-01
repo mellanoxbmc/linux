@@ -335,6 +335,12 @@
 				label = "cpu_reset_hard";
 				reg = <0x30>;
 				mask = <0xdf>;
+
+				asic-thermal {
+					type = "mlxsw_minimal";
+					bus = <0x0c>;
+					addr = <0x48>;
+				};
 			};
 		};
 
@@ -549,11 +555,6 @@
 
 &i2c12 {
 	status = "okay";
-
-	mlxsw_i2c@48 {
-		compatible = "mellanox,mlxsw_minimal";
-		reg = <0x48>;
-	};
 };
 
 &i2c13 {
