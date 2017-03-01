@@ -501,12 +501,14 @@
 &i2c8 {
 	status = "okay";
 
-	lm75@49 {
+	bmc_ambient: lm75@49 {
+		#thermal-sensor-cells = <0>;
 		compatible = "national,lm75";
 		reg = <0x49>;
 	};
 
-	lm75@4a {
+	carrier_ambient: lm75@4a {
+		#thermal-sensor-cells = <0>;
 		compatible = "national,lm75";
 		reg = <0x4a>;
 	};
@@ -520,12 +522,12 @@
 	status = "okay";
 
 	hwmon@41 {
-		compatible = "ti,ucd9240";
+		compatible = "ti,ucd9224";
 		reg = <0x41>;
 	};
 
 	hwmon@27 {
-		compatible = "ti,ucd9240";
+		compatible = "ti,ucd9224";
 		reg = <0x27>;
 	};
 
@@ -560,6 +562,20 @@
 
 &pwm {
 	status = "okay";
+
+	pwm-port {
+		pwm0: pwm-port0 {
+			cooling-min-level = <5>;
+			cooling-max-level = <0>;
+			#cooling-cells = <2>; /* max followed by min */
+			pwm-port = /bits/ 8 <0x00>;
+			mode-selection = /bits/ 8 <0x00>;
+			type = /bits/ 8 <0x00>;
+			fan-ctrl = /bits/ 8 <0xFF>;
+			cooling-level = /bits/ 8 <0x05>;
+			cooling-levels = <5 4 3 2 1 0>;
+		};
+	};
 };
 
 &jtag {
