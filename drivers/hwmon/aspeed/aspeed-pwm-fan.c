@@ -2621,17 +2621,19 @@ aspeed_pwm_cz_get_cur_state(struct thermal_cooling_device *tcdev,
 	struct aspeed_pwm_port_data *pwm_port =
 				(struct aspeed_pwm_port_data *)tcdev->devdata;
 
-	u8 cooling_level;
+	u8 duty_level;
+	int i;
 
 	switch (pwm_port->pwm_port_ctrl) {
 	case FALL_EDGE:
-		cooling_level = aspeed_get_pwm_duty_falling(pwm_port->priv,
-							    pwm_port->channel);
+		duty_level = aspeed_get_pwm_duty_falling(pwm_port->priv,
+							 pwm_port->channel);
+
 		break;
 
 	case RISE_EDGE:
-		cooling_level = aspeed_get_pwm_duty_rising(pwm_port->priv,
-							   pwm_port->channel);
+		duty_level = aspeed_get_pwm_duty_rising(pwm_port->priv,
+							pwm_port->channel);
 		break;
 
 	case BOTH_EDGE:
@@ -2639,8 +2641,29 @@ aspeed_pwm_cz_get_cur_state(struct thermal_cooling_device *tcdev,
 		return -EEXIST;
 	}
 
-	if (pwm_port->cooling_level != cooling_level)
-		pwm_port->cooling_level = cooling_level;
+	if (pwm_port->cooling_levels[pwm_port->cooling_level] == duty_level) {
+		*state = pwm_port->cooling_level;
+
+		return 0;
+	}
+
+	for (i = pwm_port->cooling_level; i <= pwm_port->max_state; i++) {
+		if (pwm_port->cooling_levels[i] == duty_level) {
+			pwm_port->cooling_level = i;
+			*state = pwm_port->cooling_level;
+
+			return 0;
+		}
+	}
+
+	for (i = pwm_port->cooling_level; i >= 0; i--) {
+		if (pwm_port->cooling_levels[i] == duty_level) {
+			pwm_port->cooling_level = i;
+			*state = pwm_port->cooling_level;
+
+			return 0;
+		}
+	}
 
 	*state = pwm_port->cooling_level;
 
@@ -2660,12 +2683,12 @@ aspeed_pwm_cz_set_cur_state(struct thermal_cooling_device *tcdev,
 	switch (pwm_port->pwm_port_ctrl) {
 	case FALL_EDGE:
 		aspeed_set_pwm_duty_falling(pwm_port->priv, pwm_port->channel,
-					    pwm_port->cooling_level);
+			pwm_port->cooling_levels[pwm_port->cooling_level]);
 		break;
 
 	case RISE_EDGE:
 		aspeed_set_pwm_duty_rising(pwm_port->priv, pwm_port->channel,
-					   pwm_port->cooling_level);
+			pwm_port->cooling_levels[pwm_port->cooling_level]);
 		break;
 
 	case BOTH_EDGE:
@@ -2689,7 +2712,7 @@ static int aspeed_create_pwm_ports(struct platform_device *pdev,
 {
 	struct device_node *child;
 	u8 val, index;
-	int num, i;
+	int num;
 	int err;
 
 	for_each_child_of_node(parent, child) {
@@ -2734,15 +2757,6 @@ static int aspeed_create_pwm_ports(struct platform_device *pdev,
 			goto exit;
 		}
 
-		for (i = 0; i < num; i++) {
-			if (PWM->cooling_levels[i] > PWM_CH_NUM) {
-				dev_err(&pdev->dev, "PWM state[%d]:%d > %d\n",
-					i, PWM->cooling_levels[i], PWM_CH_NUM);
-				err = -EINVAL;
-				goto exit;
-			}
-		}
-
 		PWM->max_state = num - 1;
 
 		if (!of_property_read_u8(child, "cooling-level", &val))
@@ -2753,24 +2767,25 @@ static int aspeed_create_pwm_ports(struct platform_device *pdev,
 		if (!err) {
 			switch (val) {
 			case FALL_EDGE:
-				if ((PWM->cooling_level >
+				if ((PWM->cooling_levels[PWM->cooling_level] <
 				     PWM->cooling_levels[0]) ||
-				    (PWM->cooling_level <
+				    (PWM->cooling_level >
 				     PWM->cooling_levels[PWM->max_state])) {
 					dev_err(&pdev->dev, "PWM cooling-level property is not in range %d:%d > %d\n",
-					PWM->cooling_levels[0],
 					PWM->cooling_levels[PWM->max_state],
+					PWM->cooling_levels[0],
 					PWM->cooling_level);
 					err = -EINVAL;
 					goto exit;
 				}
 				aspeed_set_pwm_duty_falling(aspeed_pwm_tacho,
-					index,
-					PWM->cooling_level);
-			break;
+				index,
+				PWM->cooling_levels[PWM->cooling_level]);
+
+				break;
 
 			case RISE_EDGE:
-				if ((PWM->cooling_level <
+				if ((PWM->cooling_levels[PWM->cooling_level] <
 				     PWM->cooling_levels[0]) ||
 				    (PWM->cooling_level >
 				     PWM->cooling_levels[PWM->max_state])) {
@@ -2782,9 +2797,10 @@ static int aspeed_create_pwm_ports(struct platform_device *pdev,
 					goto exit;
 				}
 				aspeed_set_pwm_duty_rising(aspeed_pwm_tacho,
-					index,
-					PWM->cooling_level);
-			break;
+				index,
+				PWM->cooling_levels[PWM->cooling_level]);
+
+				break;
 
 			case BOTH_EDGE:
 			default:
@@ -2793,9 +2809,9 @@ static int aspeed_create_pwm_ports(struct platform_device *pdev,
 			}
 		}
 
-		sprintf(PWM->name, "%sd%d", "aspeed-pwm", index);
-		PWM->tcdev = thermal_cooling_device_register(PWM->name, PWM,
-							&aspeed_pwm_cool_ops);
+		sprintf(PWM->name, "%s%d", "aspeed-pwm", index);
+		PWM->tcdev = thermal_of_cooling_device_register(child,
+					PWM->name, PWM, &aspeed_pwm_cool_ops);
 		if (PTR_ERR_OR_ZERO(PWM->tcdev)) {
 			err = PTR_ERR(PWM->tcdev);
 			goto exit;
