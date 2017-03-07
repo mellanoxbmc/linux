@@ -1,36 +1,55 @@
 /*
- *  driver/pincntrl/aspeed_jtag.c
+ * Copyright (c) 2017 Mellanox Technologies. All rights reserved.
+ * Copyright (c) 2017 Oleksandr Shamray <oleksandrs@mellanox.com>
  *
- *  ASPEED JTAG controller driver
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- *  Copyright (C) 2012-2020  ASPEED Technology Inc.
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the names of the copyright holders nor the names of its
+ *    contributors may be used to endorse or promote products derived from
+ *    this software without specific prior written permission.
  *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
+ * Alternatively, this software may be distributed under the terms of the
+ * GNU General Public License ("GPL") version 2 as published by the Free
+ * Software Foundation.
  *
- *  History:
- *   2012.08.06: Initial version [Ryan Chen]
- *   2016.0806: Porting to kernel 4.7
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/miscdevice.h>
-#include <linux/slab.h>
-#include <linux/sched.h>
-#include <linux/interrupt.h>
-#include <linux/platform_device.h>
-#include <linux/io.h>
-#include <linux/uaccess.h>
-#include <linux/sysfs.h>
-#include <linux/fs.h>
-#include <linux/delay.h>
-#include <linux/of_address.h>
-#include <linux/of_platform.h>
-#include <linux/clk.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
+
+#include <linux/aspeed_jtag.h>
+#include <linux/clk.h>
+#include <linux/delay.h>
+#include <linux/fs.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/io.h>
+#include <linux/miscdevice.h>
+#include <linux/module.h>
+#include <linux/of_address.h>
+#include <linux/of_platform.h>
+#include <linux/platform_device.h>
+#include <linux/sched.h>
+#include <linux/slab.h>
+#include <linux/sysfs.h>
+#include <linux/uaccess.h>
 #include <mach/reset.h>
 
 #define AST_JTAG_DATA			0x00
@@ -88,66 +107,39 @@
 /*  AST_JTAG_IDLE - 0x18 : Ctroller set for go to IDLE */
 #define JTAG_GO_IDLE			(0x1)
 
-enum aspeed_jtag_xfer_mode {
-	JTAG_XFER_HW_MODE = 0,
-	JTAG_XFER_SW_MODE = 1,
-};
-
-struct runtest_idle {
-	enum aspeed_jtag_xfer_mode	mode;	/* 0 :HW mode, 1: SW mode */
-	unsigned char			reset;	/* Test Logic Reset */
-	unsigned char			end;	/* o: idle, 1: ir pause, 2: drpause */
-	unsigned char			tck;	/* keep tck */
-};
-
-struct sir_xfer {
-	enum aspeed_jtag_xfer_mode	mode;	/* 0 :HW mode, 1: SW mode */
-	unsigned short			length;	/* bits */
-	unsigned int			tdi;
-	unsigned int			tdo;
-	unsigned char			endir;	/* 0: idle, 1:pause */
-};
-
-struct sdr_xfer {
-	enum aspeed_jtag_xfer_mode	mode;	/* 0 :HW mode, 1: SW mode */
-	unsigned char			direct; /* 0 ; read , 1 : write */
-	unsigned short			length;	/* bits */
-	unsigned int			*tdio;
-	unsigned char			enddr;	/* 0: idle, 1:pause */
-};
-
-#define JTAGIOC_BASE       'T'
-
-#define AST_JTAG_IOCRUNTEST	_IOW(JTAGIOC_BASE, 0, struct runtest_idle)
-#define AST_JTAG_IOCSIR		_IOWR(JTAGIOC_BASE, 1, struct sir_xfer)
-#define AST_JTAG_IOCSDR		_IOWR(JTAGIOC_BASE, 2, struct sdr_xfer)
-#define AST_JTAG_SIOCFREQ	_IOW(JTAGIOC_BASE, 3, unsigned int)
-#define AST_JTAG_GIOCFREQ	_IOR(JTAGIOC_BASE, 4, unsigned int)
-
 struct aspeed_jtag_info {
 	void __iomem		*reg_base;
 	struct device		*dev;
 	struct clk		*pclk;
-	u8			status; /* 0: idle, 1: irpause, 2:drpause */
+	u8			status; /* 0: idle,
+					 * 1: irpause,
+					 * 2:drpause
+					 */
 	int			irq; /* JTAG IRQ number */
 	u32			flag;
 	wait_queue_head_t	jtag_wq;
-	bool 			is_open;
+	bool			is_open;
 };
 
 struct aspeed_jtag_info *aspeed_jtag;
+static char *end_status_str[] = {"idle", "ir pause", "drpause"};
+
 static DEFINE_SPINLOCK(jtag_state_lock);
 
 static inline u32
 aspeed_jtag_read(struct aspeed_jtag_info *aspeed_jtag, u32 reg)
 {
-	return readl(aspeed_jtag->reg_base + reg);
+	int val;
+
+	val = readl(aspeed_jtag->reg_base + reg);
+	dev_dbg(aspeed_jtag->dev, "RD reg = 0x%08x, val = 0x%08x\n", reg, val);
+	return val;
 }
 
 static inline void
 aspeed_jtag_write(struct aspeed_jtag_info *aspeed_jtag, u32 val, u32 reg)
 {
-	dev_dbg(aspeed_jtag->dev, "reg = 0x%08x, val = 0x%08x\n", reg, val);
+	dev_dbg(aspeed_jtag->dev, "WR reg = 0x%08x, val = 0x%08x\n", reg, val);
 	writel(val, aspeed_jtag->reg_base + reg);
 }
 
@@ -163,12 +155,17 @@ u32 aspeed_get_pclk(struct clk *pclk)
 void
 aspeed_jtag_set_freq(struct aspeed_jtag_info *aspeed_jtag, unsigned int freq)
 {
-	u16 i;
+	u16 i = 0;
+	u32 apb_frq = 0;
 
-	for (i = 0; i < 0x7ff; i++) {
-		if ((aspeed_get_pclk(aspeed_jtag->pclk) / (i + 1)) <= freq)
-			break;
-	}
+	dev_dbg(aspeed_jtag->dev, "set frq : %d\n", freq);
+
+	apb_frq = aspeed_get_pclk(aspeed_jtag->pclk);
+
+	i = (apb_frq / freq);
+	if (apb_frq % freq == 0)
+		i--;
+
 	aspeed_jtag_write(aspeed_jtag,
 			  ((aspeed_jtag_read(aspeed_jtag, AST_JTAG_TCK) &
 					      ~JTAG_TCK_DIVISOR_MASK) | i),
@@ -221,6 +218,15 @@ static u8 tck_cycle(struct aspeed_jtag_info *aspeed_jtag, u8 TMS, u8 TDI)
 	return tdo;
 }
 
+void aspeed_jtag_wait_instruction_pause(
+		struct aspeed_jtag_info *aspeed_jtag)
+{
+	wait_event_interruptible(aspeed_jtag->jtag_wq, (aspeed_jtag->flag ==
+				 JTAG_INST_PAUSE));
+
+	aspeed_jtag->flag = 0;
+}
+
 void aspeed_jtag_wait_instruction_complete(struct aspeed_jtag_info *aspeed_jtag)
 {
 	wait_event_interruptible(aspeed_jtag->jtag_wq, (aspeed_jtag->flag ==
@@ -253,7 +259,13 @@ void aspeed_jtag_run_test_idle(struct aspeed_jtag_info *aspeed_jtag,
 {
 	int i = 0;
 
-	dev_dbg(aspeed_jtag->dev, ":%s mode\n", runtest->mode ? "SW":"HW");
+	dev_dbg(aspeed_jtag->dev,
+		"aspeed_jtag runtest, status:%d, mode:%s, end:%s, reset:%d, tck:%d\n",
+		aspeed_jtag->status,
+		runtest->mode ? "SW" : "HW",
+		end_status_str[runtest->end],
+		runtest->reset,
+		runtest->tck);
 
 	if (runtest->mode) {
 		/* SW mode from idle , from pause,  -- > to pause, to idle */
@@ -264,20 +276,20 @@ void aspeed_jtag_run_test_idle(struct aspeed_jtag_info *aspeed_jtag,
 
 		switch (aspeed_jtag->status) {
 		case 0:
-			if (runtest->end == 1) {
+			if (runtest->end == JTAG_STATE_IRPAUSE) {
 				tck_cycle(aspeed_jtag, 1, 0); /* DRSCan */
 				tck_cycle(aspeed_jtag, 1, 0); /* IRSCan */
 				tck_cycle(aspeed_jtag, 0, 0); /* IRCap */
 				tck_cycle(aspeed_jtag, 1, 0); /* IRExit1 */
 				tck_cycle(aspeed_jtag, 0, 0); /* IRPause */
 				aspeed_jtag->status = 1;
-			} else if (runtest->end == 2) {
+			} else if (runtest->end == JTAG_STATE_DRPAUSE) {
 				tck_cycle(aspeed_jtag, 1, 0); /* DRSCan */
 				tck_cycle(aspeed_jtag, 0, 0); /* DRCap */
 				tck_cycle(aspeed_jtag, 1, 0); /* DRExit1 */
 				tck_cycle(aspeed_jtag, 0, 0); /* DRPause */
 				aspeed_jtag->status = 1;
-			} else {
+			} else { /* JTAG_STATE_IDLE*/
 				tck_cycle(aspeed_jtag, 0, 0);/* IDLE */
 				aspeed_jtag->status = 0;
 			}
@@ -285,7 +297,7 @@ void aspeed_jtag_run_test_idle(struct aspeed_jtag_info *aspeed_jtag,
 
 		case 1:
 			/* from IR/DR Pause */
-			if (runtest->end == 1) {
+			if (runtest->end == JTAG_STATE_IRPAUSE) {
 				tck_cycle(aspeed_jtag, 1, 0); /* Exit2 IR/DR */
 				tck_cycle(aspeed_jtag, 1, 0); /* Updt IR/DR */
 				tck_cycle(aspeed_jtag, 1, 0); /* DRSCan */
@@ -294,7 +306,7 @@ void aspeed_jtag_run_test_idle(struct aspeed_jtag_info *aspeed_jtag,
 				tck_cycle(aspeed_jtag, 1, 0); /* IRExit1 */
 				tck_cycle(aspeed_jtag, 0, 0); /* IRPause */
 				aspeed_jtag->status = 1;
-			} else if (runtest->end == 2) {
+			} else if (runtest->end == JTAG_STATE_DRPAUSE) {
 				tck_cycle(aspeed_jtag, 1, 0); /* Exit2 IR/DR */
 				tck_cycle(aspeed_jtag, 1, 0); /* Update IR/DR */
 				tck_cycle(aspeed_jtag, 1, 0); /* DRSCan */
@@ -343,10 +355,13 @@ int aspeed_jtag_sir_xfer(struct aspeed_jtag_info *aspeed_jtag,
 {
 	int i = 0;
 
-	dev_dbg(aspeed_jtag->dev, "%s mode, ENDIR : %d, len : %d\n",
-		sir->mode ? "SW":"HW", sir->endir, sir->length);
+	dev_dbg(aspeed_jtag->dev,
+		"aspeed_jtag SIR xfer, mode:%s, TDI:%x, ENDIR : %d, len:%d\n",
+		sir->mode ? "SW" : "HW", sir->tdi, sir->endir, sir->length);
 
 	if (sir->mode) {
+		aspeed_jtag_write(aspeed_jtag, JTAG_SW_MODE_EN |
+				  JTAG_SW_MODE_TDIO, AST_JTAG_SW);
 		if (aspeed_jtag->status) {
 			/* from IR/DR Pause */
 			tck_cycle(aspeed_jtag, 1, 0); /* Exit2 IR / DR */
@@ -376,7 +391,7 @@ int aspeed_jtag_sir_xfer(struct aspeed_jtag_info *aspeed_jtag,
 		tck_cycle(aspeed_jtag, 0, 0); /* IRPause */
 
 		/* stop pause */
-		if (sir->endir == 0) {
+		if (sir->endir == JTAG_STATE_IDLE) {
 			/* go to idle */
 			tck_cycle(aspeed_jtag, 1, 0); /* IRExit2 */
 			tck_cycle(aspeed_jtag, 1, 0); /* IRUpdate */
@@ -387,7 +402,7 @@ int aspeed_jtag_sir_xfer(struct aspeed_jtag_info *aspeed_jtag,
 		aspeed_jtag_write(aspeed_jtag, 0, AST_JTAG_SW);
 		aspeed_jtag_write(aspeed_jtag, sir->tdi, AST_JTAG_INST);
 
-		if (sir->endir) {
+		if (sir->endir != JTAG_STATE_IDLE) {
 			aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN |
 					  JTAG_ENG_OUT_EN |
 					  JTAG_SET_INST_LEN(sir->length),
@@ -396,6 +411,7 @@ int aspeed_jtag_sir_xfer(struct aspeed_jtag_info *aspeed_jtag,
 					  JTAG_ENG_OUT_EN |
 					  JTAG_SET_INST_LEN(sir->length) |
 					  JTAG_INST_EN, AST_JTAG_CTRL);
+			aspeed_jtag_wait_instruction_pause(aspeed_jtag);
 		} else {
 			aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN |
 					  JTAG_ENG_OUT_EN | JTAG_LAST_INST |
@@ -405,12 +421,14 @@ int aspeed_jtag_sir_xfer(struct aspeed_jtag_info *aspeed_jtag,
 					  JTAG_ENG_OUT_EN | JTAG_LAST_INST |
 					  JTAG_SET_INST_LEN(sir->length) |
 					  JTAG_INST_EN, AST_JTAG_CTRL);
+			aspeed_jtag_wait_instruction_complete(aspeed_jtag);
 		}
 
-		aspeed_jtag_wait_instruction_complete(aspeed_jtag);
 		sir->tdo = aspeed_jtag_read(aspeed_jtag, AST_JTAG_INST);
+		if (sir->endir == JTAG_STATE_IDLE) {
 		aspeed_jtag_write(aspeed_jtag, JTAG_SW_MODE_EN |
 				  JTAG_SW_MODE_TDIO, AST_JTAG_SW);
+		}
 	}
 
 	aspeed_jtag->status = sir->endir;
@@ -418,16 +436,107 @@ int aspeed_jtag_sir_xfer(struct aspeed_jtag_info *aspeed_jtag,
 	return 0;
 }
 
+unsigned int *copy_from_user_bit_data(void *udata, unsigned int bit_size)
+{
+	void *kdata;
+	int size = 0;
+	int ret = 0;
+
+	size = (bit_size + 7) / 8;
+	kdata = kzalloc(size, GFP_KERNEL);
+
+	if (!kdata)
+		return NULL;
+
+	ret = copy_from_user(kdata, udata, size);
+
+	if (ret) {
+		kfree(kdata);
+		return NULL;
+	}
+	return kdata;
+}
+
+int copy_to_user_bit_data(void *udata, void *kdata, unsigned int bit_size)
+{
+	int ret = 0;
+	int size = 0;
+
+	size  = (bit_size + 7) / 8;
+	ret = copy_to_user(udata, kdata, size);
+	return ret;
+}
+
+void aspeed_jtag_push_data(struct aspeed_jtag_info *aspeed_jtag,
+			   u32 shift_bits)
+{
+	dev_dbg(aspeed_jtag->dev, "shit bits %d\n", shift_bits);
+	aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN | JTAG_ENG_OUT_EN |
+			  JTAG_DATA_LEN(shift_bits),
+			  AST_JTAG_CTRL);
+	aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN | JTAG_ENG_OUT_EN |
+			  JTAG_DATA_LEN(shift_bits) | JTAG_DATA_EN,
+			  AST_JTAG_CTRL);
+	aspeed_jtag_wait_data_pause_complete(aspeed_jtag);
+}
+
+void aspeed_jtag_push_data_last(struct aspeed_jtag_info *aspeed_jtag,
+				u32 shift_bits,
+				enum aspeed_jtag_enstate enddr)
+{
+	if (enddr != JTAG_STATE_IDLE) {
+		dev_dbg(aspeed_jtag->dev,
+			"DR Keep Pause\n");
+		aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN | JTAG_ENG_OUT_EN |
+			JTAG_DR_UPDATE | JTAG_DATA_LEN(shift_bits),
+			AST_JTAG_CTRL);
+		aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN | JTAG_ENG_OUT_EN |
+			JTAG_DR_UPDATE | JTAG_DATA_LEN(shift_bits) |
+			JTAG_DATA_EN,
+			AST_JTAG_CTRL);
+		aspeed_jtag_wait_data_pause_complete(aspeed_jtag);
+	} else {
+		dev_dbg(aspeed_jtag->dev,
+			"DR go IDLE\n");
+		aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN | JTAG_ENG_OUT_EN |
+				  JTAG_LAST_DATA | JTAG_DATA_LEN(shift_bits),
+				  AST_JTAG_CTRL);
+		aspeed_jtag_write(aspeed_jtag, JTAG_ENG_EN | JTAG_ENG_OUT_EN |
+				  JTAG_LAST_DATA | JTAG_DATA_LEN(shift_bits) |
+				  JTAG_DATA_EN,
+				  AST_JTAG_CTRL);
+		aspeed_jtag_wait_data_complete(aspeed_jtag);
+
+		aspeed_jtag_write(aspeed_jtag, JTAG_SW_MODE_EN |
+				  JTAG_SW_MODE_TDIO,
+				  AST_JTAG_SW);
+	}
+}
+
 int aspeed_jtag_sdr_xfer(struct aspeed_jtag_info *aspeed_jtag,
 			 struct sdr_xfer *sdr)
 {
 	unsigned int index = 0;
+	unsigned int i = 0;
 	u32 shift_bits = 0;
 	u32 tdo = 0;
 	u32 remain_xfer = sdr->length;
+	char dbg_str[256];
+	unsigned int *kdata;
+	unsigned int pos = 0;
+	int ret = 0;
 
-	dev_dbg(aspeed_jtag->dev, "%s mode, ENDDR : %d, len : %d\n",
-		sdr->mode ? "SW":"HW", sdr->enddr, sdr->length);
+	kdata = copy_from_user_bit_data(sdr->tdio, sdr->length);
+	if (!kdata)
+		return -1;
+
+	for (index = 0, i = 0; index < sdr->length; index += 32, i++)
+		pos += sprintf(&dbg_str[pos], "0x%08x ", kdata[i]);
+
+	dev_dbg(aspeed_jtag->dev,
+		"aspeed_jtag SDR xfer, mode:%s, ENDDR:%d, len:%d, TDI[ %s ]\n",
+		sdr->mode ? "SW" : "HW", sdr->enddr, remain_xfer, dbg_str);
+	index = 0;
 
 	if (sdr->mode) {
 		/* SW mode */
@@ -445,11 +554,12 @@ int aspeed_jtag_sdr_xfer(struct aspeed_jtag_info *aspeed_jtag,
 			if (sdr->direct) {
 				/* write */
 				if ((shift_bits % 32) == 0)
-					dev_dbg(aspeed_jtag->dev, "W dr->dr_data[%d]: %x\n",
-						index, sdr->tdio[index]);
+					dev_dbg(aspeed_jtag->dev,
+						"W dr->dr_data[%d]: %x\n",
+						index, kdata[index]);
 
-				tdo = (sdr->tdio[index] >> (shift_bits % 32)) &
-				      0x1;
+				tdo = (kdata[index] >> (shift_bits % 32)) &
+				       0x1;
 				dev_dbg(aspeed_jtag->dev, "%d\n", tdo);
 				if (remain_xfer == 1)
 					/* DRExit1 */
@@ -467,11 +577,12 @@ int aspeed_jtag_sdr_xfer(struct aspeed_jtag_info *aspeed_jtag,
 					tdo = tck_cycle(aspeed_jtag, 0, tdo);
 
 				dev_dbg(aspeed_jtag->dev, "%d\n", tdo);
-				sdr->tdio[index] |= (tdo << (shift_bits % 32));
+				kdata[index] |= (tdo << (shift_bits % 32));
 
 				if ((shift_bits % 32) == 0)
-					dev_dbg(aspeed_jtag->dev, "R dr->dr_data[%d]: %x\n",
-						  index, sdr->tdio[index]);
+					dev_dbg(aspeed_jtag->dev,
+						"R dr->dr_data[%d]: %x\n",
+						index, kdata[index]);
 			}
 			shift_bits++;
 			remain_xfer--;
@@ -481,7 +592,7 @@ int aspeed_jtag_sdr_xfer(struct aspeed_jtag_info *aspeed_jtag,
 
 		tck_cycle(aspeed_jtag, 0, 0); /* DRPause */
 
-		if (sdr->enddr == 0) {
+		if (sdr->enddr == JTAG_STATE_IDLE) {
 			tck_cycle(aspeed_jtag, 1, 0); /* DRExit2 */
 			tck_cycle(aspeed_jtag, 1, 0); /* DRUpdate */
 			tck_cycle(aspeed_jtag, 0, 0); /* IDLE */
@@ -491,11 +602,12 @@ int aspeed_jtag_sdr_xfer(struct aspeed_jtag_info *aspeed_jtag,
 		aspeed_jtag_write(aspeed_jtag, 0, AST_JTAG_SW);
 		while (remain_xfer) {
 			if (sdr->direct) {
-				dev_dbg(aspeed_jtag->dev, "W dr->dr_data[%d]: %x\n",
-					index, sdr->tdio[index]);
+				dev_dbg(aspeed_jtag->dev,
+					"W dr->dr_data[%d]: %x\n",
+					index, kdata[index]);
 				aspeed_jtag_write(aspeed_jtag,
-						  sdr->tdio[index],
-						   AST_JTAG_DATA);
+						  kdata[index],
+						  AST_JTAG_DATA);
 			} else {
 				aspeed_jtag_write(aspeed_jtag, 0,
 						  AST_JTAG_DATA);
@@ -506,66 +618,32 @@ int aspeed_jtag_sdr_xfer(struct aspeed_jtag_info *aspeed_jtag,
 				/* read bytes were not equals to column length
 				 * => Pause-DR
 				 */
-				dev_dbg(aspeed_jtag->dev, "shit bits %d\n",
-					shift_bits);
-				aspeed_jtag_write(aspeed_jtag,
-					JTAG_ENG_EN | JTAG_ENG_OUT_EN |
-					JTAG_DATA_LEN(shift_bits),
-					AST_JTAG_CTRL);
-				aspeed_jtag_write(aspeed_jtag,
-					JTAG_ENG_EN | JTAG_ENG_OUT_EN |
-					JTAG_DATA_LEN(shift_bits) |
-						      JTAG_DATA_EN,
-						      AST_JTAG_CTRL);
-				aspeed_jtag_wait_data_pause_complete(
-								aspeed_jtag);
+
+				aspeed_jtag_push_data(aspeed_jtag,
+						      shift_bits);
 			} else {
 				/* read bytes equals to column length =>
 				 * Update-DR
 				 */
 				shift_bits = remain_xfer;
-				dev_dbg(aspeed_jtag->dev, "shit bits %d with last\n",
-					shift_bits);
-				if (sdr->enddr) {
-					dev_dbg(aspeed_jtag->dev, "DR Keep Pause\n");
-					aspeed_jtag_write(aspeed_jtag,
-						JTAG_ENG_EN | JTAG_ENG_OUT_EN |
-						JTAG_DR_UPDATE |
-						JTAG_DATA_LEN(shift_bits),
-						AST_JTAG_CTRL);
-					aspeed_jtag_write(aspeed_jtag,
-						JTAG_ENG_EN | JTAG_ENG_OUT_EN |
-						JTAG_DR_UPDATE |
-						JTAG_DATA_LEN(shift_bits) |
-						JTAG_DATA_EN, AST_JTAG_CTRL);
-				} else {
-					dev_dbg(aspeed_jtag->dev, "DR go IDLE\n");
-					aspeed_jtag_write(aspeed_jtag,
-						JTAG_ENG_EN | JTAG_ENG_OUT_EN |
-						JTAG_LAST_DATA |
-						JTAG_DATA_LEN(shift_bits),
-						AST_JTAG_CTRL);
-					aspeed_jtag_write(aspeed_jtag,
-						JTAG_ENG_EN | JTAG_ENG_OUT_EN |
-						JTAG_LAST_DATA |
-						JTAG_DATA_LEN(shift_bits) |
-						JTAG_DATA_EN, AST_JTAG_CTRL);
-				}
-				aspeed_jtag_wait_data_complete(aspeed_jtag);
+				aspeed_jtag_push_data_last(aspeed_jtag,
+							   shift_bits,
+							   sdr->enddr);
 			}
 
 			if (!sdr->direct) {
 				if (shift_bits < 32)
-					sdr->tdio[index] =
+					kdata[index] =
 						aspeed_jtag_read(aspeed_jtag,
 							AST_JTAG_DATA) >>
 							(32 - shift_bits);
 				else
-					sdr->tdio[index] =
+					kdata[index] =
 						aspeed_jtag_read(aspeed_jtag,
 							AST_JTAG_DATA);
-				dev_dbg(aspeed_jtag->dev, "R dr->dr_data[%d]: %x\n",
-						index, sdr->tdio[index]);
+				dev_dbg(aspeed_jtag->dev,
+					"R dr->dr_data[%d]: %x\n",
+					index, kdata[index]);
 			}
 
 			remain_xfer = remain_xfer - shift_bits;
@@ -573,13 +651,16 @@ int aspeed_jtag_sdr_xfer(struct aspeed_jtag_info *aspeed_jtag,
 			dev_dbg(aspeed_jtag->dev, "remain_xfer %d\n",
 				remain_xfer);
 		}
-		aspeed_jtag_write(aspeed_jtag, JTAG_SW_MODE_EN |
-				  JTAG_SW_MODE_TDIO, AST_JTAG_SW);
 	}
 
-	aspeed_jtag->status = sdr->enddr;
+	aspeed_jtag_write(aspeed_jtag, JTAG_SW_MODE_EN |
+			  JTAG_SW_MODE_TDIO, AST_JTAG_SW);
 
-	return 0;
+	ret = copy_to_user_bit_data(sdr->tdio, kdata, sdr->length);
+	aspeed_jtag->status = sdr->enddr;
+	kfree(kdata);
+
+	return ret;
 }
 
 static irqreturn_t aspeed_jtag_interrupt(int this_irq, void *dev_id)
@@ -589,6 +670,12 @@ static irqreturn_t aspeed_jtag_interrupt(int this_irq, void *dev_id)
 
 	status = aspeed_jtag_read(aspeed_jtag, AST_JTAG_ISR);
 	dev_dbg(aspeed_jtag->dev, "status %x\n", status);
+
+	if (status & JTAG_INST_PAUSE) {
+		aspeed_jtag_write(aspeed_jtag, JTAG_INST_PAUSE |
+				(status & 0xf), AST_JTAG_ISR);
+		aspeed_jtag->flag = JTAG_INST_PAUSE;
+	}
 
 	if (status & JTAG_INST_COMPLETE) {
 		aspeed_jtag_write(aspeed_jtag, JTAG_INST_COMPLETE |
@@ -619,7 +706,7 @@ static irqreturn_t aspeed_jtag_interrupt(int this_irq, void *dev_id)
 }
 
 static long aspeed_jtag_ioctl(struct file *file, unsigned int cmd,
-		       unsigned long arg)
+			      unsigned long arg)
 {
 	struct aspeed_jtag_info *aspeed_jtag = file->private_data;
 	void __user *argp = (void __user *)arg;
@@ -627,6 +714,7 @@ static long aspeed_jtag_ioctl(struct file *file, unsigned int cmd,
 	struct sdr_xfer sdr;
 	struct runtest_idle run_idle;
 	int ret = 0;
+	unsigned int frq = 0;
 
 	switch (cmd) {
 	case AST_JTAG_GIOCFREQ:
@@ -635,10 +723,17 @@ static long aspeed_jtag_ioctl(struct file *file, unsigned int cmd,
 		break;
 
 	case AST_JTAG_SIOCFREQ:
-		if ((unsigned int )arg > aspeed_get_pclk(aspeed_jtag->pclk))
+		ret = __get_user(frq, (unsigned int __user *)argp);
+
+		if (frq == 0) {
+			ret = -EFAULT;
+			break;
+		}
+
+		if (frq > aspeed_get_pclk(aspeed_jtag->pclk))
 			ret = -EFAULT;
 		else
-			aspeed_jtag_set_freq(aspeed_jtag, (unsigned int)arg);
+			aspeed_jtag_set_freq(aspeed_jtag, frq);
 		break;
 
 	case AST_JTAG_IOCRUNTEST:
@@ -656,7 +751,7 @@ static long aspeed_jtag_ioctl(struct file *file, unsigned int cmd,
 		else
 			aspeed_jtag_sir_xfer(aspeed_jtag, &sir);
 
-		if (copy_to_user(argp, &sir, sizeof(struct sdr_xfer)))
+		if (copy_to_user(argp, &sir, sizeof(struct sir_xfer)))
 			ret = -EFAULT;
 
 		break;
@@ -716,18 +811,20 @@ static ssize_t show_status(struct device *dev,
 static DEVICE_ATTR(status, S_IRUGO, show_status, NULL);
 
 static ssize_t show_frequency(struct device *dev,
-	struct device_attribute *attr, char *buf)
+			      struct device_attribute *attr, char *buf)
 {
 	struct aspeed_jtag_info *aspeed_jtag = dev_get_drvdata(dev);
 
 	return sprintf(buf, "Frequency (%d)\n",
 		       aspeed_get_pclk(aspeed_jtag->pclk) /
 		       (JTAG_GET_TCK_DIVISOR(aspeed_jtag_read(aspeed_jtag,
-		       AST_JTAG_TCK)) + 1));
+					     AST_JTAG_TCK)) + 1));
 }
 
 static ssize_t store_frequency(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
+			       struct device_attribute *attr,
+			       const char *buf,
+			       size_t count)
 {
 	unsigned long input_val;
 	struct aspeed_jtag_info *aspeed_jtag = dev_get_drvdata(dev);
@@ -774,7 +871,6 @@ static void aspeed_jtag_remove_sysfs_group(void *_dev)
 
 	sysfs_remove_group(&dev->kobj, &jtag_attribute_group);
 }
-
 
 static int aspeed_jtag_probe(struct platform_device *pdev)
 {
@@ -853,26 +949,30 @@ static int aspeed_jtag_probe(struct platform_device *pdev)
 
 	ret = sysfs_create_group(&pdev->dev.kobj, &jtag_attribute_group);
 	if (ret) {
-		dev_err(&pdev->dev, "aspeed_jtag : failed to create sysfs attributes.\n");
+		dev_err(&pdev->dev,
+			"aspeed_jtag : failed to create sysfs attributes.\n");
 		return -1;
 	}
 	ret = devm_add_action(&pdev->dev, aspeed_jtag_remove_sysfs_group,
 			      &pdev->dev);
 	if (ret) {
 		aspeed_jtag_remove_sysfs_group(&pdev->dev);
-		dev_err(&pdev->dev, "Failed to add sysfs cleanup action (%d)\n",
+		dev_err(&pdev->dev,
+			"Failed to add sysfs cleanup action (%d)\n",
 			ret);
 		return ret;
 	}
 
-	dev_info(&pdev->dev, "aspeed_jtag : driver successfully loaded.\n");
+	dev_info(&pdev->dev,
+		 "aspeed_jtag : driver successfully loaded.\n");
 
 	return 0;
 
 out_region:
 	release_mem_region(res->start, res->end - res->start + 1);
 out:
-	dev_warn(&pdev->dev, "aspeed_jtag : driver init failed ret (%d)\n", ret);
+	dev_warn(&pdev->dev,
+		 "aspeed_jtag : driver init failed ret (%d)\n", ret);
 	return ret;
 }
 
@@ -922,6 +1022,8 @@ static struct platform_driver aspeed_jtag_driver = {
 
 module_platform_driver(aspeed_jtag_driver);
 
-MODULE_AUTHOR("Ryan Chen <ryan_chen@aspeedtech.com>");
-MODULE_DESCRIPTION("AST JTAG LIB Driver");
-MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Oleksandr Shamray <oleksandrs@mellanox.com>");
+MODULE_DESCRIPTION("Aspeed JTAG platform driver");
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_ALIAS("aspeed-jtag");
+
