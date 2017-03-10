@@ -113,10 +113,7 @@
 		i2c-deferred = <&i2c6>;
 		top_aggr_offset = <0x3a>;
 		top_aggr_mask = <0x48>;
-		top_aggr_irq = <174>;
-		interrupt-parent = <&gpio>;
-		gpios-signal = <&gpio ASPEED_GPIO(S, 1)>;
-
+		top_aggr_irq = <ASPEED_GPIO(S, 1)>;
 		psu {
 			aggr_mask = <0x08>;
 			reg = <0x58>;

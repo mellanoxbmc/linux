@@ -33,6 +33,7 @@
 
 #include <linux/bitops.h>
 #include <linux/device.h>
+#include <linux/gpio.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/i2c.h>
@@ -168,6 +169,7 @@ struct mlxcpld_ctrl_led_data {
  */
 struct mlxcpld_ctrl_priv_data {
 	int irq;
+	int irq_gpio;
 	struct i2c_client *client;
 	struct mlxcpld_hotplug_platform_data *plat;
 	struct mlxcpld_ctrl_data *rst;
@@ -1148,10 +1150,16 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 	if (!of_property_read_u32(np, "top_aggr_mask", &val))
 		pdata->top_aggr_mask = val;
 
-	if (!of_property_read_u32(np, "top_aggr_irq", &priv->irq)) {
+	if (!of_property_read_u32(np, "top_aggr_irq", &priv->irq_gpio)) {
+		gpio_request(priv->irq_gpio, "top_aggr_irq");
+		gpio_export(priv->irq_gpio, true);
+		gpio_direction_input(priv->irq_gpio);
+		priv->irq = gpio_to_irq(priv->irq_gpio);
 		err = devm_request_irq(&client->dev, priv->irq,
-				       mlxcpld_ctrl_irq_handler, 0,
+				       mlxcpld_ctrl_irq_handler,
+				       IRQF_TRIGGER_FALLING,
 				       client->name, priv);
+
 		if (err) {
 			dev_err(&client->dev, "Failed to request irq: %d\n",
 				err);
