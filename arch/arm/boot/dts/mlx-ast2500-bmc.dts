@@ -112,7 +112,7 @@
 		reg = <0x71>;
 		i2c-deferred = <&i2c6>;
 		top_aggr_offset = <0x3a>;
-		top_aggr_mask = <0x48>;
+		top_aggr_mask = <0x4c>;
 		top_aggr_irq = <ASPEED_GPIO(S, 1)>;
 		psu {
 			aggr_mask = <0x08>;
@@ -331,12 +331,6 @@
 				label = "cpu_reset_hard";
 				reg = <0x30>;
 				mask = <0xdf>;
-
-				asic_internal: mlxsw_minimal@48 {
-					type = "mlxsw_minimal";
-					bus = <0x0c>;
-					addr = <0x48>;
-				};
 			};
 		};
 
@@ -408,6 +402,24 @@
 		#size-cells = <0>;
 		compatible = "mellanox,mlxcpld-ctrl";
 		reg = <0x72>;
+		i2c-deferred = <&i2c12>;
+		top_aggr_offset = <0x40>;
+		top_aggr_mask = <0x01>;
+		top_aggr_irq = <ASPEED_GPIO(S, 1)>;
+
+		asic {
+			aggr_mask = <0x01>;
+
+			asic1: mlxsw_minimal@48 {
+				reg = <0x50>;
+				mask = <0x03>;
+				health = <0x02>;
+				counter = <0x03>;
+				type = "mlxsw_minimal";
+				bus = <0x0c>;
+				addr = <0x48>;
+			};
+		};
 
 		gpro {
 			#address-cells = <1>;

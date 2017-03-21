@@ -73,10 +73,6 @@
 #define MLXCPLD_LED_BLINK_6HZ 83 /* ~83 msec off/on */
 
 /* Offset of event and mask registers from status register. */
-#define MLXCPLD_CTRL_REG_AGGR_ADRR 0x3a
-#define MLXCPLD_CTRL_REG_PSU_ADRR 0x58
-#define MLXCPLD_CTRL_REG_PWR_ADRR 0x64
-#define MLXCPLD_CTRL_REG_FAN_ADRR 0x88
 #define MLXCPLD_CTRL_EVENT_OFF 1
 #define MLXCPLD_CTRL_MASK_OFF 2
 #define MLXCPLD_CTRL_AGGR_MASK_OFF 1
@@ -104,6 +100,7 @@ enum mlxcpld_ctrl_attr_type {
 	MLXCPLD_CTRL_ATTR_TYPE_MUX,
 	MLXCPLD_CTRL_ATTR_TYPE_GPRW,
 	MLXCPLD_CTRL_ATTR_TYPE_GPRO,
+	MLXCPLD_CTRL_ATTR_TYPE_ASIC,
 };
 
 /**
@@ -112,20 +109,26 @@ enum mlxcpld_ctrl_attr_type {
  * @label: attribute register offset;
  * @mask: attribute mask;
  * @bit: attribute effective bit;
+ * @aggr_mask: attribute aggregation mask;
+ * @health: expected health value;
+ * @counter: counter value, after which health could be considered as stable;
  * @np - pointer to node platform associated with attribute;
  * @pdev: pointer to platform device associated with attribute;
  * @dyndev: pointer to dynamic I2C device, created upon related trigger;
- * @dyndev_created: flag indicating that dynamic I2C device has been created;
+ * @health_counter: I2C device health indication counter;
  */
 struct mlxcpld_ctrl_data {
 	char label[MLXCPLD_CTRL_LABEL_MAX_SIZE];
 	u32 reg;
 	u32 mask;
 	u8 bit;
+	u8 aggr_mask;
+	u8 health;
+	u8 counter;
 	struct device_node *np;
 	struct platform_device *pdev;
 	struct mlxcpld_hotplug_device *dyndev;
-	bool dyndev_created;
+	u8 health_counter;
 };
 
 #define DRV_NAME "mlnxcpld_ctrl"
@@ -149,6 +152,9 @@ struct mlxcpld_ctrl_led_data {
  * @mux: mux control;
  * @gprw: general purpose read/write registers;
  * @gpro: general purpose read only registers;
+ * @asic: asic device info;
+ * @led: led object info;
+ * @led_data: led data;
  * @hwmon: hwmon device;
  * @mlxcpld_ctrl_attr: sysfs attributes array;
  * @mlxcpld_ctrl_dev_attr: sysfs sensor device attribute array;
@@ -160,12 +166,15 @@ struct mlxcpld_ctrl_led_data {
  * @psu_cache: last value of PSU register status;
  * @pwr_cache: last value of power register status;
  * @fan_cache: last value of FAN register status;
+ * @asic_cache: last value of ASIC register status;
  * @rst_count: number of available reset attributes;
  * @cause_count: number of available reset cuase attributes;
  * @gprw_count: number of available general purpose read-write attributes;
  * @gpro_count: number of available general purpose read only attributes;
+ * @asic_count: number of available asic objects;
  * @set_handler: if set - interrupt handler should be connected;
  * @en_dynamic_node: set to true after dynamic device node is enabled;
+ * @after_probe: flag indicating if driver is after probing complition;
  */
 struct mlxcpld_ctrl_priv_data {
 	int irq;
@@ -177,6 +186,7 @@ struct mlxcpld_ctrl_priv_data {
 	struct mlxcpld_ctrl_data *mux;
 	struct mlxcpld_ctrl_data *gprw;
 	struct mlxcpld_ctrl_data *gpro;
+	struct mlxcpld_ctrl_data *asic;
 	struct mlxcpld_ctrl_data *led;
 	struct mlxcpld_ctrl_led_data *led_pdata;
 	struct device *hwmon;
@@ -191,15 +201,18 @@ struct mlxcpld_ctrl_priv_data {
 	u8 psu_cache;
 	u8 pwr_cache;
 	u8 fan_cache;
+	u8 asic_cache;
 	u8 rst_count;
 	u8 cause_count;
 	u8 mux_count;
 	u8 gprw_count;
 	u8 gpro_count;
 	u8 led_count;
+	u8 asic_count;
 	u8 psu_ind;
 	u8 pwr_ind;
 	u8 fan_ind;
+	u8 asic_ind;
 	u8 rst_ind;
 	u8 cause_ind;
 	u8 mux_ind;
@@ -207,6 +220,7 @@ struct mlxcpld_ctrl_priv_data {
 	u8 gpro_ind;
 	bool set_handler;
 	bool en_dynamic_node;
+	bool after_probe;
 };
 
 static struct property flash_en = {
@@ -291,6 +305,14 @@ static ssize_t mlxcpld_ctrl_attr_show(struct device *dev,
 				priv->plat->fan_count));
 		break;
 
+	case MLXCPLD_CTRL_ATTR_TYPE_ASIC:
+		/* ASIC status. */
+		if (priv->asic)
+			reg_val = i2c_smbus_read_byte_data(priv->client,
+							   priv->asic->reg) &
+							   priv->asic->mask;
+		break;
+
 	case MLXCPLD_CTRL_ATTR_TYPE_RST:
 		break;
 
@@ -340,6 +362,7 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 	case MLXCPLD_CTRL_ATTR_TYPE_FAN:
 	case MLXCPLD_CTRL_ATTR_TYPE_RST_CAUSE:
 	case MLXCPLD_CTRL_ATTR_TYPE_GPRO:
+	case MLXCPLD_CTRL_ATTR_TYPE_ASIC:
 		break;
 
 	case MLXCPLD_CTRL_ATTR_TYPE_RST:
@@ -363,13 +386,6 @@ static ssize_t mlxcpld_ctrl_attr_store(struct device *dev,
 				data->label);
 			return err;
 		}
-
-		if (data->dyndev && !data->dyndev_created) {
-			mlxcpld_ctrl_device_create(&priv->client->dev,
-						   data->dyndev);
-			data->dyndev_created = true;
-		}
-
 
 		break;
 
@@ -448,7 +464,8 @@ static int mlxcpld_ctrl_attr_init(struct mlxcpld_ctrl_priv_data *priv)
 	int num_attrs = priv->plat->psu_count + priv->plat->pwr_count +
 			priv->plat->fan_count + priv->rst_count +
 			priv->cause_count + priv->mux_count +
-			priv->gprw_count + priv->gpro_count;
+			priv->gprw_count + priv->gpro_count +
+			priv->asic_count;
 	struct mlxcpld_ctrl_data *rst = priv->rst;
 	struct mlxcpld_ctrl_data *cause = priv->cause;
 	struct mlxcpld_ctrl_data *mux = priv->mux;
@@ -511,6 +528,27 @@ static int mlxcpld_ctrl_attr_init(struct mlxcpld_ctrl_priv_data *priv)
 						    GFP_KERNEL, "fan%u", i %
 						    priv->plat->fan_count + 1);
 		PRIV_DEV_ATTR(i).nr = MLXCPLD_CTRL_ATTR_TYPE_FAN;
+		PRIV_DEV_ATTR(i).dev_attr.attr.mode = 0444;
+		PRIV_DEV_ATTR(i).dev_attr.show = mlxcpld_ctrl_attr_show;
+
+		if (!PRIV_ATTR(i)->name) {
+			dev_err(&priv->client->dev, "Memory allocation failed for sysfs attribute %d.\n",
+				i + 1);
+			return -ENOMEM;
+		}
+
+		PRIV_DEV_ATTR(i).dev_attr.attr.name = PRIV_ATTR(i)->name;
+		PRIV_DEV_ATTR(i).index = i;
+		sysfs_attr_init(&PRIV_DEV_ATTR(i).dev_attr.attr);
+	}
+
+	priv->asic_ind = i;
+	for (j = 0; j < priv->asic_count; j++, i++) {
+		PRIV_ATTR(i) = &PRIV_DEV_ATTR(i).dev_attr.attr;
+		PRIV_ATTR(i)->name = devm_kasprintf(&priv->client->dev,
+						    GFP_KERNEL, "asic%u", i %
+						    priv->asic_count + 1);
+		PRIV_DEV_ATTR(i).nr = MLXCPLD_CTRL_ATTR_TYPE_ASIC;
 		PRIV_DEV_ATTR(i).dev_attr.attr.mode = 0444;
 		PRIV_DEV_ATTR(i).dev_attr.show = mlxcpld_ctrl_attr_show;
 
@@ -652,7 +690,6 @@ mlxcpld_ctrl_work_helper(struct device *dev, struct i2c_client *client,
 				  clear);
 	/* Read status. */
 	val = i2c_smbus_read_byte_data(client, offset) & mask;
-
 	asserted = *cache ^ val;
 	*cache = val;
 
@@ -689,6 +726,62 @@ mlxcpld_ctrl_work_helper(struct device *dev, struct i2c_client *client,
 	/* Unmask event. */
 	i2c_smbus_write_byte_data(client, offset + MLXCPLD_CTRL_MASK_OFF,
 				  mask);
+}
+
+static inline void
+mlxcpld_ctrl_asic_work_helper(struct mlxcpld_ctrl_priv_data *priv, u8 *cache)
+{
+	struct mlxcpld_ctrl_data *asic = priv->asic;
+	struct i2c_client *client = priv->client;
+	struct device *dev = &priv->client->dev;
+	struct mlxcpld_hotplug_device *item;
+	u16 offset = priv->asic->reg;
+	u8 mask, val, clear = 0;
+	int i;
+
+	for (i = 0; i < priv->asic_count; i++, asic++) {
+		item = asic->dyndev;
+		mask = asic->mask;
+		offset = asic->reg;
+
+		/* Mask event. */
+		i2c_smbus_write_byte_data(client, offset +
+					  MLXCPLD_CTRL_MASK_OFF, clear);
+		/* Read status. */
+		val = i2c_smbus_read_byte_data(client, offset) & mask;
+		*cache = val;
+
+		/*
+		 * Validate if item related to received signal type is valid.
+		 * It should never happen, excepted the situation when some
+		 * piece of hardware is broken. In such situation just produce
+		 * error message and return. Caller must continue to handle the
+		 * signals from other devices if any.
+		 */
+		if (unlikely(!item)) {
+			dev_err(dev, "False signal is received: register at offset 0x%02x, mask 0x%02x.\n",
+				offset, mask);
+			return;
+		}
+
+		if (val == asic->health) {
+			if ((asic->health_counter == asic->counter) ||
+			    !priv->after_probe)
+				mlxcpld_ctrl_device_create(dev, item);
+			asic->health_counter++;
+		}
+		else {
+			if (asic->health_counter > priv->asic->counter)
+				mlxcpld_ctrl_device_destroy(item);
+		}
+
+		/* Acknowledge event. */
+		i2c_smbus_write_byte_data(client, offset + MLXCPLD_CTRL_EVENT_OFF,
+				  clear);
+		/* Unmask event. */
+		i2c_smbus_write_byte_data(client, offset + MLXCPLD_CTRL_MASK_OFF,
+				  mask);
+	}
 }
 
 /*
@@ -753,6 +846,10 @@ static void mlxcpld_ctrl_work_handler(struct work_struct *work)
 					 priv->plat->fan_mask,
 					 &priv->fan_cache);
 
+	/* Handle ASIC configuration changes. */
+	if (priv->asic && (aggr_asserted & priv->asic->aggr_mask))
+		mlxcpld_ctrl_asic_work_helper(priv, &priv->asic_cache);
+
 	if (aggr_asserted) {
 		spin_lock_irqsave(&priv->lock, flags);
 
@@ -810,6 +907,15 @@ static void mlxcpld_ctrl_set_irq(struct mlxcpld_ctrl_priv_data *priv)
 				  MLXCPLD_CTRL_MASK_OFF,
 				  priv->plat->fan_mask);
 
+	if (priv->asic) {
+		/* Clear asic presense event. */
+		i2c_smbus_write_byte_data(priv->client, priv->asic->reg +
+				  MLXCPLD_CTRL_EVENT_OFF, clear);
+		/* Set asic initial status as zero and unmask asic event. */
+		i2c_smbus_write_byte_data(priv->client, priv->asic->reg +
+				  MLXCPLD_CTRL_MASK_OFF, priv->asic->mask);
+	}
+
 	/* Keep aggregation initial status as zero and unmask events. */
 	i2c_smbus_write_byte_data(priv->client, priv->plat->top_aggr_offset +
 				  MLXCPLD_CTRL_AGGR_MASK_OFF,
@@ -854,6 +960,15 @@ static void mlxcpld_ctrl_unset_irq(struct mlxcpld_ctrl_priv_data *priv)
 	i2c_smbus_write_byte_data(priv->client, priv->plat->fan_reg_offset +
 				  MLXCPLD_CTRL_EVENT_OFF, clear);
 
+	if (priv->asic) {
+		/* Mask asic presense event. */
+		i2c_smbus_write_byte_data(priv->client, priv->asic->reg +
+				  MLXCPLD_CTRL_MASK_OFF, clear);
+		/* Clear asic presense event. */
+		i2c_smbus_write_byte_data(priv->client, priv->asic->reg +
+				  MLXCPLD_CTRL_EVENT_OFF, clear);
+	}
+
 	/* Remove all the attached devices. */
 	for (i = 0; i < priv->plat->psu_count; i++)
 		mlxcpld_ctrl_device_destroy(priv->plat->psu + i);
@@ -863,6 +978,9 @@ static void mlxcpld_ctrl_unset_irq(struct mlxcpld_ctrl_priv_data *priv)
 
 	for (i = 0; i < priv->plat->fan_count; i++)
 		mlxcpld_ctrl_device_destroy(priv->plat->fan + i);
+
+	for (i = 0; i < priv->asic_count; i++, priv->asic++)
+		mlxcpld_ctrl_device_destroy(priv->asic->dyndev);
 }
 
 static irqreturn_t mlxcpld_ctrl_irq_handler(int irq, void *dev)
@@ -878,8 +996,8 @@ static irqreturn_t mlxcpld_ctrl_irq_handler(int irq, void *dev)
 
 static int
 mlxcpld_ctrl_of_child_parser(struct device_node *np,
-				 struct mlxcpld_hotplug_device *hpdev,
-				 u8 *aggr_mask, u16 *reg, u8 *mask)
+			     struct mlxcpld_hotplug_device *hpdev,
+			     u8 *aggr_mask, u16 *reg, u8 *mask)
 {
 	struct device_node *child;
 	const char *drvname;
@@ -921,7 +1039,7 @@ mlxcpld_ctrl_of_child_data_parser(struct device_node *np,
 				  struct mlxcpld_ctrl_data *data,
 				  struct mlxcpld_ctrl_priv_data *priv)
 {
-	struct device_node *child, *fhandle, *subchild;
+	struct device_node *child, *fhandle;
 	const char *label;
 
 	for_each_child_of_node(np, child) {
@@ -939,28 +1057,60 @@ mlxcpld_ctrl_of_child_data_parser(struct device_node *np,
 		if (fhandle)
 			data->np = fhandle;
 
-		for_each_child_of_node(child, subchild) {
-			const char *drvname;
-			u32 val;
+		data++;
+	}
 
-			data->dyndev = devm_kzalloc(&priv->client->dev,
-						    sizeof(*data->dyndev),
-						    GFP_KERNEL);
+	return 0;
+}
 
-			if (of_property_read_string(subchild, "type",
-						    &drvname))
-				continue;
-			strlcpy(data->dyndev->brdinfo.type, drvname,
-				I2C_NAME_SIZE);
+static int
+mlxcpld_ctrl_of_child_asic_parser(struct device_node *np,
+				  struct mlxcpld_ctrl_priv_data *priv,
+				  struct mlxcpld_ctrl_data *data)
+{
+	struct device_node *child;
+	const char *drvname;
+	u32 val;
 
-			if (of_property_read_u32(subchild, "bus", &val))
-				continue;
-			data->dyndev->bus = val;
+	if (of_property_read_u32(np, "aggr_mask", &val))
+		return -ENODEV;
+	data->aggr_mask = val;
 
-			if (of_property_read_u32(subchild, "addr", &val))
-				continue;
-			data->dyndev->brdinfo.addr = val;
-		}
+	for_each_child_of_node(np, child) {
+		data->dyndev = devm_kzalloc(&priv->client->dev,
+					    sizeof(*data->dyndev), GFP_KERNEL);
+		if (!data->dyndev)
+			return -ENOMEM;
+
+		if (of_property_read_u32(child, "reg", &val))
+			return -ENODEV;
+		data->reg = val;
+
+		if (of_property_read_u32(child, "mask", &val))
+			return -ENODEV;
+		data->mask = val;
+
+		if (of_property_read_u32(child, "health", &val))
+			return -ENODEV;
+		data->health = val;
+
+		if (of_property_read_u32(child, "counter", &val))
+			return -ENODEV;
+		data->counter = val;
+
+		if (of_property_read_string(child, "type", &drvname))
+			return -ENODEV;
+		strlcpy(data->dyndev->brdinfo.type, drvname, I2C_NAME_SIZE);
+
+		if (of_property_read_u32(child, "bus", &val))
+			return -ENODEV;
+		data->dyndev->bus = val;
+
+		if (of_property_read_u32(child, "addr", &val))
+			return -ENODEV;
+		data->dyndev->brdinfo.addr = val;
+
+		data->health_counter = 0;
 
 		data++;
 	}
@@ -1157,7 +1307,7 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 		priv->irq = gpio_to_irq(priv->irq_gpio);
 		err = devm_request_irq(&client->dev, priv->irq,
 				       mlxcpld_ctrl_irq_handler,
-				       IRQF_TRIGGER_FALLING,
+				       IRQF_TRIGGER_FALLING | IRQF_SHARED,
 				       client->name, priv);
 
 		if (err) {
@@ -1220,6 +1370,21 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 						&pdata->fan_reg_offset,
 						&pdata->fan_mask);
 
+			if (err)
+				return err;
+		}
+
+		/* Add ASIC devcies. */
+		if (!of_node_cmp(child->name, "asic")) {
+			priv->asic_count = of_get_child_count(child);
+			priv->asic = devm_kzalloc(&client->dev,
+						  sizeof(*priv->asic) *
+						  priv->asic_count, GFP_KERNEL);
+			if (!priv->asic)
+				return -ENOMEM;
+
+			err = mlxcpld_ctrl_of_child_asic_parser(child, priv,
+						priv->asic);
 			if (err)
 				return err;
 		}
@@ -1354,6 +1519,8 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 		mlxcpld_ctrl_set_irq(priv);
 	}
 	mlxcpld_led_config(priv);
+
+	priv->after_probe = true;
 
 	return 0;
 }
