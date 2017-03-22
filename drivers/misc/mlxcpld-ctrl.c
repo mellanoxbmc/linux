@@ -162,6 +162,7 @@ struct mlxcpld_ctrl_led_data {
  * @groups: list of sysfs attribute group for hwmon registration;
  * @dwork: delayed work template;
  * @lock: spin lock;
+ * @access_lock: mutex for attribute access;
  * @aggr_cache: last value of aggregation register status;
  * @psu_cache: last value of PSU register status;
  * @pwr_cache: last value of power register status;
@@ -197,6 +198,7 @@ struct mlxcpld_ctrl_priv_data {
 	const struct attribute_group *groups[2];
 	struct delayed_work dwork;
 	spinlock_t lock;
+	struct mutex access_lock;
 	u8 aggr_cache;
 	u8 psu_cache;
 	u8 pwr_cache;
@@ -1145,7 +1147,8 @@ mlxcpld_led_store_hw(struct mlxcpld_ctrl_priv_data *priv,
 	 * 0xf0 - lower nibble is to be used (bits from 0 to 3), mask 0x0f -
 	 * higher nibble (bits from 4 to 7).
 	 */
-	spin_lock(&led_pdata->data_parrent->lock);
+	mutex_lock(&priv->access_lock);
+
 	mlxcpld_led_bus_access_func(priv->client,
 				    MLXPLAT_CPLD_LPC_REG_BASE_ADRR,
 					off, 1, &val);
@@ -1154,7 +1157,7 @@ mlxcpld_led_store_hw(struct mlxcpld_ctrl_priv_data *priv,
 	mlxcpld_led_bus_access_func(priv->client,
 				    MLXPLAT_CPLD_LPC_REG_BASE_ADRR,
 				    off, 0, &val);
-	spin_unlock(&led_pdata->data_parrent->lock);
+	mutex_unlock(&priv->access_lock);
 }
 
 static void
@@ -1223,7 +1226,7 @@ static int mlxcpld_led_config(struct mlxcpld_ctrl_priv_data *priv)
 			priv->led_pdata[i].base_color =
 				MLXCPLD_LED_AMBER_STATIC_ON;
 		} else {
-			brightness = 1;
+			brightness = LED_OFF;
 			priv->led_pdata[i].base_color =
 				MLXCPLD_LED_GREEN_STATIC_ON;
 		}
@@ -1498,6 +1501,7 @@ mlxcpld_ctrl_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, priv);
 	spin_lock_init(&priv->lock);
+	mutex_init(&priv->access_lock);
 	err = mlxcpld_ctrl_attr_init(priv);
 	if (err) {
 		dev_err(&client->dev, "Failed to allocate attributes: %d\n",
@@ -1532,6 +1536,7 @@ static int mlxcpld_ctrl_remove(struct i2c_client *client)
 	/* Clean interrupts setup. */
 	if (priv->set_handler)
 		mlxcpld_ctrl_unset_irq(priv);
+	mutex_destroy(&priv->access_lock);
 
 	return 0;
 }
