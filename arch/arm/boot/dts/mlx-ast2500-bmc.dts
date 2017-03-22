@@ -122,13 +122,13 @@
 			psu1_eeprom {
 				type = "24c02";
 				bus = <0x03>;
-				addr = <0x51>;
+				addr = <0x50>;
 			};
 
 			psu2_eeprom {
 				type = "24c02";
 				bus = <0x03>;
-				addr = <0x50>;
+				addr = <0x51>;
 			};
 		};
 
@@ -140,13 +140,13 @@
 			psu1_contoller {
 				type = "dps460";
 				bus = <0x03>;
-				addr = <0x59>;
+				addr = <0x58>;
 			};
 
 			psu2_contoller {
 				type = "dps460";
 				bus = <0x03>;
-				addr = <0x58>;
+				addr = <0x59>;
 			};
 		};
 
