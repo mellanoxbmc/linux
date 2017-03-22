@@ -411,7 +411,7 @@
 			aggr_mask = <0x01>;
 
 			asic1: mlxsw_minimal@48 {
-				reg = <0x50>;
+				offset = <0x50>;
 				mask = <0x03>;
 				health = <0x02>;
 				counter = <0x03>;
@@ -582,7 +582,7 @@
 			type = /bits/ 8 <0x00>;
 			fan-ctrl = /bits/ 8 <0xFF>;
 			cooling-level = /bits/ 8 <0x00>;
-			cooling-levels = <5 5 5 5 5 0 0 0 0 0 0>;
+			cooling-levels = <5 5 5 5 5 4 3 2 1 0 0>;
 		};
 	};
 };

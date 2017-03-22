@@ -1084,7 +1084,7 @@ mlxcpld_ctrl_of_child_asic_parser(struct device_node *np,
 		if (!data->dyndev)
 			return -ENOMEM;
 
-		if (of_property_read_u32(child, "reg", &val))
+		if (of_property_read_u32(child, "offset", &val))
 			return -ENODEV;
 		data->reg = val;
 
