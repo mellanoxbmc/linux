@@ -1070,7 +1070,7 @@
 			};
 
 			jtag: jtag@1e6e4000 {
-				compatible = "aspeed,aspeed2500-jtag";
+				compatible = "aspeed,aspeed-jtag";
 				reg = <0x1e6e4000 0x1c>;
 				reg-shift = <2>;
 				clocks = <&clk_apb>;

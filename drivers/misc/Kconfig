@@ -84,6 +84,13 @@ config ATMEL_TCB_CLKSRC_BLOCK
 	  TC can be used for other purposes, such as PWM generation and
 	  interval timing.
 
+config ASPEED_JTAG
+	tristate "ASPEED JTAG control"
+	depends on ARCH_ASPEED
+	default n
+	help
+	 Driver for ASPEED JTAG controller driver
+
 config DUMMY_IRQ
 	tristate "Dummy IRQ handler"
 	default n
