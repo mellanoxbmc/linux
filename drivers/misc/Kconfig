@@ -525,6 +525,18 @@ config MLXCPLD_CTRL
 	  This driver can also be built as a module. If so the module
 	  will be called mlxcpld-ctrl.
 
+config ASPEED_MCTP
+        depends on (ARCH_ASPEED || COMPILE_TEST) && MFD_SYSCON && PCI
+        tristate "ASPEED MCTP control"
+        default n
+        ---help---
+          Driver for ASPEED Management Component Transport Protocol (MCTP)
+	  controller to support communications between different intelligent
+	  hardware components for monitoring and control inside a managed
+	  system. Drivers allows MCTP packets receiving through PCIe from
+	  a host and sending MCTP packets through PCI to a host.
+	  Drivers exposes ioctl interface for packet transfer.
+
 config SRAM
 	bool "Generic on-chip SRAM driver"
 	depends on HAS_IOMEM

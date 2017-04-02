@@ -1,0 +1,6 @@
+Aspeed SoC MCTP Controller.
+--------------------------
+This binding defines the MCTP control interface for Aspeed SoC.
+
+Required properties:
+- compatible = "aspeed,aspeed-mctp"
