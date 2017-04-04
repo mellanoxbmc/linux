@@ -34,7 +34,7 @@
 #ifndef	_UAPI_LINUX_ASPEED_JTAG_H
 #define	_UAPI_LINUX_ASPEED_JTAG_H
 
-/*
+/**
  * enum aspeed_jtag_xfer_mode:
  *
  * @ASPEED_JTAG_XFER_HW_MODE: hardware mode transfer;
@@ -45,8 +45,9 @@ enum aspeed_jtag_xfer_mode {
 	ASPEED_JTAG_XFER_SW_MODE = 1,
 };
 
-/*
- *  enum aspeed_jtag_endstate:
+/**
+ * enum aspeed_jtag_endstate:
+ *
  * @ASPEED_JTAG_STATE_IDLE: JTAG sm state IDLE
  * @ASPEED_JTAG_STATE_IRPAUSE: JTAG sm state PAUSE_IR
  * @ASPEED_JTAG_STATE_DRPAUSE: JTAG sm state PAUSE_DR
@@ -57,7 +58,7 @@ enum aspeed_jtag_endstate {
 	ASPEED_JTAG_STATE_DRPAUSE = 2,
 };
 
-/*
+/**
  * struct aspeed_jtag_runtest_idle jtag idle test:
  *
  * @mode: access mode: 0 - HW, 1 - SW;
@@ -75,7 +76,7 @@ struct aspeed_jtag_runtest_idle {
 	unsigned char			tck;
 };
 
-/*
+/**
  * struct aspeed_jtag_sir_xfer  jtag SIR xfer:
  *
  * @mode: access mode: 0 - HW, 1 - SW;
@@ -95,7 +96,7 @@ struct aspeed_jtag_sir_xfer {
 	enum aspeed_jtag_endstate endir;
 };
 
-/*
+/**
  * struct aspeed_jtag_sdr_xfer jtag SDR xfer:
  *
  * @mode: access mode: 0 - HW, 1 - SW;

@@ -1,0 +1,7 @@
+Aspeed SoC JTAG Controller.
+--------------------------
+This binding defines the JTAG control interface for Aspeed SoC.
+
+Required properties:
+- compatible = "aspeed,aspeed-jtag"
+

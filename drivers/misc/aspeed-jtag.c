@@ -33,7 +33,7 @@
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
-#include <linux/aspeed_jtag.h>
+#include <linux/aspeed-jtag.h>
 #include <linux/bitops.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
@@ -364,7 +364,7 @@ aspeed_jtag_run_test_idle_sw(struct aspeed_jtag_info *aspeed_jtag,
 		aspeed_jtag_tck_cycle(aspeed_jtag, 0, 0);
 }
 
-/*
+/**
  * aspeed_jtag_run_test_idle:
  * JTAG reset: generates at least 9 TMS high and 1 TMS low to force
  * devices into Run-Test/Idle State.
@@ -899,11 +899,15 @@ static ssize_t aspeed_jtag_show_frequency(struct device *dev,
 					  char *buf)
 {
 	struct aspeed_jtag_info *aspeed_jtag = dev_get_drvdata(dev);
+	int pclk;
+	int div;
+	int frq;
 
-	return sprintf(buf, "Frequency (%d)\n",
-		       aspeed_get_pclk(aspeed_jtag->pclk) /
-		       (ASPEED_JTAG_GET_TCK_DIV(aspeed_jtag_read(aspeed_jtag,
-						ASPEED_JTAG_TCK)) + 1));
+	pclk = aspeed_get_pclk(aspeed_jtag->pclk);
+	div = aspeed_jtag_read(aspeed_jtag, ASPEED_JTAG_TCK);
+	frq = pclk / (ASPEED_JTAG_GET_TCK_DIV(div) + 1);
+
+	return sprintf(buf, "Frequency (%d)\n", frq);
 }
 
 static ssize_t aspeed_jtag_store_frequency(struct device *dev,
