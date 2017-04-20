@@ -86,10 +86,13 @@ config ATMEL_TCB_CLKSRC_BLOCK
 
 config ASPEED_JTAG
 	tristate "ASPEED JTAG control"
-	depends on ARCH_ASPEED
+	depends on (ARCH_ASPEED || COMPILE_TEST) && MFD_SYSCON
 	default n
-	help
-	 Driver for ASPEED JTAG controller driver
+	---help---
+	  Driver for ASPEED JTAG controller. It provides generic JTAG interface
+	  for the Aspeed SoCs to allow burning of the devices, equipped with
+	  JTAG interface using the standard Serial Vector Format (SVF) file
+	  format.
 
 config DUMMY_IRQ
 	tristate "Dummy IRQ handler"

@@ -59,7 +59,7 @@ enum aspeed_jtag_endstate {
 };
 
 /**
- * struct aspeed_jtag_runtest_idle jtag idle test:
+ * struct aspeed_jtag_runtest_idle - jtag idle test:
  *
  * @mode: access mode: 0 - HW, 1 - SW;
  * @reset: logic reset;
@@ -77,7 +77,7 @@ struct aspeed_jtag_runtest_idle {
 };
 
 /**
- * struct aspeed_jtag_sir_xfer  jtag SIR xfer:
+ * struct aspeed_jtag_sir_xfer - jtag SIR xfer:
  *
  * @mode: access mode: 0 - HW, 1 - SW;
  * @length: xfer bits len;
@@ -97,7 +97,7 @@ struct aspeed_jtag_sir_xfer {
 };
 
 /**
- * struct aspeed_jtag_sdr_xfer jtag SDR xfer:
+ * struct aspeed_jtag_sdr_xfer - jtag SDR xfer:
  *
  * @mode: access mode: 0 - HW, 1 - SW;
  * @direct: xfer direction: 0 -read, 1 - write;
