@@ -121,6 +121,10 @@ static int mlxsw_get_cooling_device_idx(struct mlxsw_thermal *thermal,
 		if (thermal->cdevs[i] == cdev)
 			return i;
 
+	/* Allow external cooling binding. */
+	if (!thermal->cdevs[0])
+		return 0;
+
 	return -ENODEV;
 }
 
@@ -382,6 +386,7 @@ int mlxsw_thermal_init(struct mlxsw_core *core,
 				goto err_free_thermal;
 		}
 	}
+
 	for (i = 0; i < MLXSW_MFCR_PWMS_MAX; i++) {
 		if (pwm_active & BIT(i)) {
 			struct thermal_cooling_device *cdev;
@@ -396,6 +401,11 @@ int mlxsw_thermal_init(struct mlxsw_core *core,
 			thermal->cdevs[i] = cdev;
 		}
 	}
+
+	/* Do not reboot system for external cooling device device. */
+	if (!thermal->cdevs[0])
+		thermal->trips[MLXSW_THERMAL_NUM_TRIPS - 1].type =
+							THERMAL_TRIP_HOT;
 
 	thermal->tzdev = thermal_zone_device_register("mlxsw",
 						      MLXSW_THERMAL_NUM_TRIPS,
